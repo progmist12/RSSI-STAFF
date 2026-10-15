@@ -1,97 +1,38 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# RSSI Staff
 
-# Getting Started
+React Native mobile workspace for authorized Sugar Regulatory Administration staff reviewing sugarcane field observations in Negros Oriental and Negros Occidental.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Staff workflows
 
-## Step 1: Start Metro
+- Sign in through the RSSI backend using a staff account.
+- View province-scoped report and farmer records from the live API.
+- Search and filter reports by verification status.
+- Open report details and authenticated photo evidence.
+- Submit a verification result, independent SRA severity, reviewer notes, rationale, and optional follow-up date when the account has review permission.
+- View farmer profiles and their registered farm properties, subject to backend privacy rules.
+- Choose System, Light, or Dark appearance. The preference is stored on the device.
+- Refresh by pull-down, when connectivity returns, and when the app becomes active again.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+The app stores its bearer token in the iOS Keychain or Android secure credential store. It does not display the backend address. The API origin is configured in `src/api.ts` for the current test environment.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Run Android
 
-```sh
-# Using npm
-npm start
+Install dependencies with `npm install`, start Metro with `npm start`, then run `npm run android` from another terminal. The Android debug build can also be created with `cd android; .\gradlew.bat assembleDebug`.
 
-# OR using Yarn
-yarn start
-```
+## Run iOS
 
-## Step 2: Build and run your app
+On macOS, install CocoaPods after adding native dependencies with `cd ios && bundle exec pod install`, start Metro, and run `npm run ios`.
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+## Backend routes used
 
-### Android
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/me`
+- `GET /api/v1/staff/reports`
+- `GET /api/v1/staff/reports/{id}`
+- `PUT /api/v1/staff/reports/{id}/review`
+- `GET /api/v1/staff/farmers`
+- `GET /api/v1/staff/farmers/{id}`
+- `GET /api/v1/reports/{reportId}/photos/{photoId}`
 
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+The backend enforces staff role, province access, review scopes, and private location access. The mobile client only enables report review when the session includes the `reports:review` scope.

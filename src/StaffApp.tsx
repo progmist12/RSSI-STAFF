@@ -41,6 +41,7 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { ReportsScreen, FarmersScreen } from './screens/ReportsScreen';
 import { NotificationsPanel } from './components/NotificationsPanel';
 import { MapScreen } from './screens/MapScreen';
+import { VisitsScreen } from './screens/VisitsScreen';
 import {
   AppNotification,
   PendingReview,
@@ -52,7 +53,7 @@ import {
   saveWorkspace,
 } from './offlineStore';
 
-type Tab = 'home' | 'map' | 'reports' | 'farmers' | 'settings';
+type Tab = 'home' | 'map' | 'reports' | 'visits' | 'farmers' | 'settings';
 
 function reviewFromReport(report: FieldReport): ReviewForm {
   return {
@@ -119,7 +120,6 @@ export default function StaffApp() {
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
   const requestErrorRef = useRef(false);
-  const onlineRef = useRef<boolean | null>(null);
 
   const hydrateLocalData = useCallback(async (active: StaffSession) => {
     const [snapshot, queue, savedNotifications] = await Promise.all([
@@ -146,7 +146,15 @@ export default function StaffApp() {
       setFarmerPage(snapshot.farmerPage || 1);
     }
     setPendingReviewCount(queue.length);
-    setNotifications(savedNotifications);
+    const reportNotifications = savedNotifications.filter(
+      item =>
+        item.title !== 'Connection restored' &&
+        item.title !== 'You are offline',
+    );
+    setNotifications(reportNotifications);
+    if (reportNotifications.length !== savedNotifications.length) {
+      void saveNotifications(active.user.id, reportNotifications);
+    }
     setCacheReady(true);
   }, []);
 
@@ -413,17 +421,6 @@ export default function StaffApp() {
         state.isConnected && state.isInternetReachable !== false,
       );
       setOnline(connected);
-      if (onlineRef.current !== connected) {
-        onlineRef.current = connected;
-        if (onlineRef.current !== null) {
-          addNotification(
-            connected ? 'Connection restored' : 'You are offline',
-            connected
-              ? 'Your saved workspace is syncing with the server.'
-              : 'Cached reports and farmers remain available. Reviews will sync when you reconnect.',
-          );
-        }
-      }
       if (connected) void refreshRef.current();
     });
     const appState = AppState.addEventListener('change', state => {
@@ -433,7 +430,7 @@ export default function StaffApp() {
       unsubscribe();
       appState.remove();
     };
-  }, [addNotification]);
+  }, []);
 
   useEffect(() => {
     if (session?.token && online) void refreshRef.current();
@@ -506,7 +503,8 @@ export default function StaffApp() {
 
   const openReport = async (reportOrId: FieldReport | number) => {
     if (!session) return;
-    const reportId = typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
+    const reportId =
+      typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
     const cachedReport =
       typeof reportOrId === 'number'
         ? reports.find(item => item.id === reportId)
@@ -820,6 +818,7 @@ export default function StaffApp() {
           home: 'Overview',
           map: 'Map',
           reports: 'Field reports',
+          visits: 'Visits',
           farmers: 'Farmers',
           settings: 'Settings',
         } as Record<Tab, string>
@@ -880,41 +879,43 @@ export default function StaffApp() {
                 }`}
           </Text>
         </View>
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open notifications"
-            onPress={() => {
-              markNotificationsRead();
-              setNotificationOpen(true);
-            }}
-            style={styles.refreshButton}
-          >
-            <Text style={styles.refreshGlyph}>🔔</Text>
-            {notifications.some(item => !item.read) ? (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>
-                  {notifications.filter(item => !item.read).length > 9
-                    ? '9+'
-                    : notifications.filter(item => !item.read).length}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open profile and settings"
-            onPress={() => {
-              setSelectedReport(null);
-              setSelectedFarmer(null);
-              setSearch('');
-              setTab('settings');
-            }}
-            style={styles.profileButton}
-          >
-            <Text style={styles.profileGlyph}>👤</Text>
-          </Pressable>
-        </View>
+        {!selectedReport && !selectedFarmer && tab !== 'settings' ? (
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open notifications"
+              onPress={() => {
+                markNotificationsRead();
+                setNotificationOpen(true);
+              }}
+              style={styles.refreshButton}
+            >
+              <Text style={styles.refreshGlyph}>🔔</Text>
+              {notifications.some(item => !item.read) ? (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>
+                    {notifications.filter(item => !item.read).length > 9
+                      ? '9+'
+                      : notifications.filter(item => !item.read).length}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open profile and settings"
+              onPress={() => {
+                setSelectedReport(null);
+                setSelectedFarmer(null);
+                setSearch('');
+                setTab('settings');
+              }}
+              style={styles.profileButton}
+            >
+              <Text style={styles.profileGlyph}>👤</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       {!online && (
         <View style={styles.offlineBanner}>
@@ -1041,6 +1042,19 @@ export default function StaffApp() {
             onOpenReport={openReport}
           />
         ) : null}
+        {!selectedReport && !selectedFarmer && tab === 'visits' ? (
+          <VisitsScreen
+            reports={reports}
+            reportTotal={reportTotal}
+            online={online}
+            loadingMore={loadingMore}
+            refreshing={refreshing}
+            onLoadMore={loadMore}
+            onOpenReport={openReport}
+            styles={styles}
+            colors={colors}
+          />
+        ) : null}
         {!selectedReport && !selectedFarmer && tab === 'farmers' ? (
           <FarmersScreen
             farmers={filteredFarmers}
@@ -1076,6 +1090,7 @@ export default function StaffApp() {
               ['home', '⌂', 'Overview'],
               ['map', '⌖', 'Map'],
               ['reports', '▤', 'Reports'],
+              ['visits', '◷', 'Visits'],
               ['farmers', '♧', 'Farmers'],
             ] as [Tab, string, string][]
           ).map(([key, glyph, label]) => (

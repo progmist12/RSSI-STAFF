@@ -119,8 +119,7 @@ export function NotificationsPanel({
                     textAlign: 'center',
                   }}
                 >
-                  Updates about offline work and your workspace will appear
-                  here.
+                  Report review and report sync updates will appear here.
                 </Text>
               </View>
             )}

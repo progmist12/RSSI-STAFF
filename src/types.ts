@@ -34,7 +34,7 @@ export type Farmer = {
   properties: FarmProperty[];
 };
 
-export type ReportPhoto = {id: number; name: string; url: string};
+export type ReportPhoto = { id: number; name: string; url: string };
 
 export type FieldReport = {
   id: number;
@@ -55,12 +55,22 @@ export type FieldReport = {
   verification_status: string;
   sra_severity: string | null;
   photos: ReportPhoto[];
-  farmer?: {name: string; reference: string | null};
+  farmer?: { name: string; reference: string | null };
   assigned_reviewer?: string | null;
   assessment_rationale?: string | null;
   reviewer_note?: string | null;
   follow_up_at?: string | null;
 };
 
-export type ApiPage<T> = {data: T[]; meta: {page: number; page_size: number; total: number}};
+export type ApiPage<T> = {
+  data: T[];
+  meta: { page: number; page_size: number; total: number };
+};
 
+export type ReviewForm = {
+  verificationStatus: string;
+  sraSeverity: string;
+  assessmentRationale: string;
+  reviewerNote: string;
+  followUpAt: string;
+};

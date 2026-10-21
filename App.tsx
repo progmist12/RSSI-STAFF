@@ -36,6 +36,9 @@ function StaffApp() {
   const [pendingTotal, setPendingTotal] = useState(0);
   const [reportTotal, setReportTotal] = useState(0);
   const [farmerTotal, setFarmerTotal] = useState(0);
+  const [reportPage, setReportPage] = useState(1);
+  const [farmerPage, setFarmerPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState<'reports' | 'farmers' | null>(null);
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(null);
   const [selectedFarmer, setSelectedFarmer] = useState<Farmer | null>(null);
   const [review, setReview] = useState<ReviewForm | null>(null);
@@ -86,6 +89,7 @@ function StaffApp() {
     if (reportResult.status === 'fulfilled') {
       setReports(reportResult.value.data || []);
       setReportTotal(reportResult.value.meta?.total ?? reportResult.value.data.length);
+      setReportPage(reportResult.value.meta?.page ?? 1);
       if (selectedReport) {
         const refreshed = reportResult.value.data.find(item => item.id === selectedReport.id);
         if (refreshed) setSelectedReport(refreshed);
@@ -104,6 +108,7 @@ function StaffApp() {
     if (farmerResult.status === 'fulfilled') {
       setFarmers(farmerResult.value.data || []);
       setFarmerTotal(farmerResult.value.meta?.total ?? farmerResult.value.data.length);
+      setFarmerPage(farmerResult.value.meta?.page ?? 1);
       if (selectedFarmer) {
         const refreshed = farmerResult.value.data.find(item => item.id === selectedFarmer.id);
         if (refreshed) setSelectedFarmer(refreshed);
@@ -251,6 +256,33 @@ function StaffApp() {
     finally {setReviewBusy(false);}
   };
 
+  const loadMore = async (kind: 'reports' | 'farmers') => {
+    if (!session?.token || loadingMore || refreshing) return;
+    setLoadingMore(kind);
+    const nextPage = kind === 'reports' ? reportPage + 1 : farmerPage + 1;
+    try {
+      if (kind === 'reports') {
+        const response = await apiRequest<ApiPage<FieldReport>>(`/staff/reports?page=${nextPage}&pageSize=50`, session.token);
+        setReports(items => {
+          const knownIds = new Set(items.map(item => item.id));
+          return [...items, ...response.data.filter(item => !knownIds.has(item.id))];
+        });
+        setReportTotal(response.meta?.total ?? reportTotal);
+        setReportPage(response.meta?.page ?? nextPage);
+      } else {
+        const response = await apiRequest<ApiPage<Farmer>>(`/staff/farmers?page=${nextPage}&pageSize=50`, session.token);
+        setFarmers(items => {
+          const knownIds = new Set(items.map(item => item.id));
+          return [...items, ...response.data.filter(item => !knownIds.has(item.id))];
+        });
+        setFarmerTotal(response.meta?.total ?? farmerTotal);
+        setFarmerPage(response.meta?.page ?? nextPage);
+      }
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : 'Could not load more records.', 'error');
+    } finally {setLoadingMore(null);}
+  };
+
   const filteredReports = useMemo(() => reports.filter(report => {
     const matchesFilter = listFilter === 'All' || report.verification_status === listFilter;
     const query = search.trim().toLocaleLowerCase();
@@ -306,14 +338,14 @@ function StaffApp() {
           <View style={styles.filterRow}>{['All', ...verificationOptions].map(value => <Choice key={value} label={value === 'For verification' ? 'Pending' : value} selected={listFilter === value} onPress={() => setListFilter(value)} styles={styles} colors={colors} />)}</View>
           {filteredReports.map(report => <ReportRow key={report.id} report={report} onPress={() => void openReport(report)} styles={styles} colors={colors} />)}
           {filteredReports.length === 0 && <EmptyCard title="No reports found" detail={online ? 'Try another search or filter.' : 'Connect to the internet to load your report queue.'} styles={styles} />}
-          {reportTotal > reports.length ? <Text style={styles.listFootnote}>Showing the latest {reports.length} of {reportTotal} reports.</Text> : null}
+          {reportTotal > reports.length ? <><LoadMoreButton label="Load more reports" busy={loadingMore === 'reports'} disabled={Boolean(loadingMore) || refreshing || !online} onPress={() => void loadMore('reports')} styles={styles} colors={colors} /><Text style={styles.listFootnote}>Showing {reports.length} of {reportTotal} reports. Search and filters apply to loaded reports.</Text></> : null}
         </View> : null}
         {!selectedReport && !selectedFarmer && tab === 'farmers' ? <View>
           <SectionIntro eyebrow="FARMER DIRECTORY" title="Farmers in your scope" detail={`${farmerTotal} accounts · private details are access controlled`} styles={styles} />
           <SearchInput value={search} onChange={setSearch} placeholder="Search name, reference or farm" styles={styles} colors={colors} />
           {filteredFarmers.map(farmer => <FarmerRow key={farmer.id} farmer={farmer} onPress={() => void openFarmer(farmer)} styles={styles} colors={colors} />)}
           {filteredFarmers.length === 0 && <EmptyCard title="No farmers found" detail={online ? 'Try a different name or farm.' : 'Farmer records load when the app is online.'} styles={styles} />}
-          {farmerTotal > farmers.length ? <Text style={styles.listFootnote}>Showing the first {farmers.length} of {farmerTotal} farmers.</Text> : null}
+          {farmerTotal > farmers.length ? <><LoadMoreButton label="Load more farmers" busy={loadingMore === 'farmers'} disabled={Boolean(loadingMore) || refreshing || !online} onPress={() => void loadMore('farmers')} styles={styles} colors={colors} /><Text style={styles.listFootnote}>Showing {farmers.length} of {farmerTotal} farmers. Search applies to loaded farmers.</Text></> : null}
         </View> : null}
         {!selectedReport && !selectedFarmer && tab === 'settings' ? <SettingsScreen session={session} mode={mode} setMode={setMode} styles={styles} colors={colors} onSignOut={() => void signOut()} /> : null}
       </ScrollView>
@@ -385,6 +417,12 @@ function SectionIntro({eyebrow, title, detail, styles}: any) {
 
 function SearchInput({value, onChange, placeholder, styles, colors}: any) {
   return <View style={styles.searchWrap}><Text style={styles.searchIcon}>⌕</Text><TextInput value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor={colors.muted} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => onChange('')}><Text style={styles.searchClear}>{value ? '×' : ''}</Text></Pressable></View>;
+}
+
+function LoadMoreButton({label, busy, disabled, onPress, styles, colors}: any) {
+  return <Pressable accessibilityRole="button" accessibilityState={{disabled, busy}} disabled={disabled} onPress={onPress} style={[styles.loadMoreButton, disabled && styles.buttonDisabled]}>
+    {busy ? <ActivityIndicator size="small" color={colors.blue} /> : <Text style={styles.loadMoreText}>{label}</Text>}
+  </Pressable>;
 }
 
 function Choice({label, selected, onPress, styles}: any) {
@@ -529,7 +567,7 @@ function makeStyles(c: Palette) {
     reportRow: {flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, borderRadius: 15, marginBottom: 9}, reportIcon: {width: 39, height: 39, borderRadius: 13, alignItems: 'center', justifyContent: 'center'}, reportIconGlyph: {fontSize: 22, color: c.ink}, reportBody: {flex: 1, minWidth: 0}, rowBetween: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6}, reportCode: {fontSize: 13, fontWeight: '900', color: c.ink}, reportFarm: {fontSize: 11, color: c.ink, marginTop: 5, fontWeight: '600'}, rowMeta: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 5}, reportMeta: {fontSize: 10, color: c.muted, flexShrink: 1}, reportSeverity: {fontSize: 10, fontWeight: '800'}, reportDate: {fontSize: 10, color: c.muted, marginTop: 5}, rowArrow: {fontSize: 24, color: c.muted, marginLeft: 1}, severityBlue: {backgroundColor: c.blueSoft, color: c.blue}, severityAmber: {backgroundColor: c.amberSoft, color: c.amber}, severityOrange: {backgroundColor: c.orangeSoft, color: c.orange}, severityRed: {backgroundColor: c.redSoft, color: c.red}, severityMuted: {backgroundColor: c.surfaceAlt, color: c.muted},
     badge: {alignSelf: 'flex-start', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5}, badgeText: {fontSize: 9, fontWeight: '800'}, badgeAmber: {backgroundColor: c.amberSoft, color: c.amber}, badgeGreen: {backgroundColor: c.greenSoft, color: c.green}, badgeMuted: {backgroundColor: c.surfaceAlt, color: c.muted}, badgeRed: {backgroundColor: c.redSoft, color: c.red}, badgeBlue: {backgroundColor: c.blueSoft, color: c.blue},
     farmerRow: {flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, borderRadius: 15, marginBottom: 9}, avatar: {width: 44, height: 44, borderRadius: 15, backgroundColor: c.greenSoft, justifyContent: 'center', alignItems: 'center'}, avatarText: {fontSize: 15, fontWeight: '900', color: c.green}, farmerBody: {flex: 1, minWidth: 0}, farmerName: {fontSize: 13, fontWeight: '800', color: c.ink}, farmerReference: {fontSize: 10, color: c.muted, marginTop: 3}, farmerProperty: {fontSize: 10, color: c.blue, marginTop: 5},
-    emptyCard: {alignItems: 'center', justifyContent: 'center', paddingVertical: 29, paddingHorizontal: 20, borderWidth: 1, borderColor: c.line, borderRadius: 17, backgroundColor: c.surface, marginVertical: 5}, emptyIcon: {width: 42, height: 42, borderRadius: 15, backgroundColor: c.greenSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 10}, emptyGlyph: {fontSize: 22, fontWeight: '800', color: c.green}, emptyTitle: {fontSize: 14, fontWeight: '800', color: c.ink}, emptyDetail: {fontSize: 11, lineHeight: 17, color: c.muted, textAlign: 'center', marginTop: 5}, listFootnote: {fontSize: 10, textAlign: 'center', color: c.muted, marginVertical: 10},
+    emptyCard: {alignItems: 'center', justifyContent: 'center', paddingVertical: 29, paddingHorizontal: 20, borderWidth: 1, borderColor: c.line, borderRadius: 17, backgroundColor: c.surface, marginVertical: 5}, emptyIcon: {width: 42, height: 42, borderRadius: 15, backgroundColor: c.greenSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 10}, emptyGlyph: {fontSize: 22, fontWeight: '800', color: c.green}, emptyTitle: {fontSize: 14, fontWeight: '800', color: c.ink}, emptyDetail: {fontSize: 11, lineHeight: 17, color: c.muted, textAlign: 'center', marginTop: 5}, listFootnote: {fontSize: 10, textAlign: 'center', color: c.muted, marginVertical: 10}, loadMoreButton: {minHeight: 43, marginTop: 5, borderRadius: 12, borderWidth: 1, borderColor: c.line, backgroundColor: c.surface, alignItems: 'center', justifyContent: 'center'}, loadMoreText: {fontSize: 11, fontWeight: '800', color: c.blue},
     privacyCallout: {flexDirection: 'row', gap: 9, backgroundColor: c.blueSoft, borderRadius: 13, padding: 12, marginTop: 14, marginBottom: 8}, privacyGlyph: {fontSize: 17, color: c.blue, fontWeight: '700'}, privacyText: {flex: 1, fontSize: 10, lineHeight: 15, color: c.muted},
     detailHero: {padding: 17, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, borderRadius: 17, marginBottom: 11}, detailHeroTop: {flexDirection: 'row', gap: 10, alignItems: 'flex-start'}, detailCode: {fontSize: 10, color: c.blue, fontWeight: '900', letterSpacing: 0.8}, detailTitle: {fontSize: 19, fontWeight: '800', color: c.ink, marginTop: 5}, detailSub: {fontSize: 11, color: c.muted, marginTop: 4}, detailMetrics: {flexDirection: 'row', marginTop: 17, paddingTop: 14, borderTopWidth: 1, borderTopColor: c.line, gap: 9}, detailMetric: {flex: 1}, detailMetricLabel: {fontSize: 9, color: c.muted, fontWeight: '600'}, detailMetricValue: {fontSize: 11, color: c.ink, fontWeight: '800', marginTop: 5},
     card: {padding: 16, borderRadius: 17, backgroundColor: c.surface, borderWidth: 1, borderColor: c.line, marginBottom: 11}, cardTitleBlock: {marginBottom: 15}, cardTitle: {fontSize: 15, fontWeight: '800', color: c.ink}, cardDetail: {fontSize: 10, lineHeight: 15, color: c.muted, marginTop: 4}, fieldLabel: {fontSize: 11, color: c.ink, fontWeight: '800', marginBottom: 6}, bodyText: {fontSize: 12, color: c.ink, lineHeight: 18}, contextStrip: {padding: 10, backgroundColor: c.blueSoft, borderRadius: 10, marginTop: 14}, contextStripText: {fontSize: 10, color: c.blue, lineHeight: 15}, input: {minHeight: 46, borderColor: c.line, borderWidth: 1, backgroundColor: c.surfaceAlt, color: c.ink, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 12}, multiline: {minHeight: 82, textAlignVertical: 'top'}, inputHint: {fontSize: 10, color: c.muted, marginTop: -2}, optionalText: {color: c.muted, fontWeight: '500'},

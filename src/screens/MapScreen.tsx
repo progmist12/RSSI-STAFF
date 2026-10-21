@@ -20,11 +20,47 @@ const provinceOptions = [
   'Negros Oriental',
 ];
 const statusOptions = ['All', 'For verification', 'Confirmed', 'No detection'];
+const severityLegend = [
+  { label: 'No report / not assessed', color: '#64748B' },
+  { label: 'Mild · 1–20%', color: '#2563EB' },
+  { label: 'Moderate · 21–50%', color: '#EAB308' },
+  { label: 'Severe · 51–70%', color: '#F97316' },
+  { label: 'Highly severe · 71–100%', color: '#DC2626' },
+];
 
-function markerColor(status: string | undefined, colors: Palette) {
-  if (status === 'Confirmed') return colors.green;
-  if (status === 'No detection') return colors.blue;
-  return colors.amber;
+function normalizedSeverity(severity: string | null | undefined) {
+  if (severity === 'Low') return 'Mild';
+  return severity || 'Not assessed';
+}
+
+function severityColor(severity: string | null | undefined) {
+  switch (normalizedSeverity(severity)) {
+    case 'Mild':
+      return '#2563EB';
+    case 'Moderate':
+      return '#EAB308';
+    case 'Severe':
+      return '#F97316';
+    case 'Highly severe':
+      return '#DC2626';
+    default:
+      return '#64748B';
+  }
+}
+
+function severityRange(severity: string | null | undefined) {
+  switch (normalizedSeverity(severity)) {
+    case 'Mild':
+      return '1–20%';
+    case 'Moderate':
+      return '21–50%';
+    case 'Severe':
+      return '51–70%';
+    case 'Highly severe':
+      return '71–100%';
+    default:
+      return null;
+  }
 }
 
 export function MapScreen({
@@ -68,6 +104,7 @@ export function MapScreen({
             statusIndex === 0 ||
             report.verification_status === statusOptions[statusIndex],
         );
+        const noReport = location.reports.length === 0;
         if (needle && !placeMatches) {
           visibleReports = visibleReports.filter(report =>
             `${report.code} ${report.property_name}`
@@ -75,7 +112,9 @@ export function MapScreen({
               .includes(needle),
           );
         }
-        if (!visibleReports.length) return null;
+        if (noReport && !placeMatches) return null;
+        if (!visibleReports.length && (!noReport || statusIndex !== 0))
+          return null;
         return {
           ...location,
           key: `${location.location_type}-${location.province}-${location.municipality || location.title}-${index}`,
@@ -84,6 +123,11 @@ export function MapScreen({
       })
       .filter((location): location is VisibleLocation & { key: string } =>
         Boolean(location),
+      )
+      .sort(
+        (left, right) =>
+          Number(left.visibleReports.length === 0) -
+          Number(right.visibleReports.length === 0),
       );
   }, [locations, provinceIndex, query, statusIndex]);
 
@@ -192,7 +236,7 @@ export function MapScreen({
           />
           {filteredLocations.map(location => {
             const latest = location.visibleReports[0];
-            const color = markerColor(latest?.verification_status, colors);
+            const color = severityColor(latest?.farmer_severity);
             const isSelected = selected?.key === location.key;
             return (
               <Marker
@@ -217,7 +261,13 @@ export function MapScreen({
                   }}
                 >
                   <Text
-                    style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '900' }}
+                    style={{
+                      color: latest?.farmer_severity === 'Moderate'
+                        ? '#1F2937'
+                        : '#FFFFFF',
+                      fontSize: 9,
+                      fontWeight: '900',
+                    }}
                   >
                     {location.visibleReports.length}
                   </Text>
@@ -308,7 +358,7 @@ export function MapScreen({
         }}
       >
         <Text style={{ color: colors.ink, fontSize: 13, fontWeight: '800' }}>
-          SRA report status
+          Latest farmer-reported damage severity
         </Text>
         <View
           style={{
@@ -318,11 +368,7 @@ export function MapScreen({
             marginTop: 9,
           }}
         >
-          {[
-            ['Confirmed', colors.green],
-            ['For verification', colors.amber],
-            ['No detection', colors.blue],
-          ].map(([label, color]) => (
+          {severityLegend.map(({ label, color }) => (
             <View
               key={label}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
@@ -349,8 +395,9 @@ export function MapScreen({
         >
           Farm pins appear only when location consent and staff permissions
           allow. Other reports are grouped at municipality centers. Tap a pin to
-          open any report there. Basemap tiles need internet; saved report
-          locations remain available offline.
+          open any report there. Marker color reflects the newest visible
+          farmer-reported severity at that location. Basemap tiles need internet;
+          saved report locations remain available offline.
         </Text>
       </View>
 
@@ -420,10 +467,20 @@ export function MapScreen({
                   </Text>
                 </View>
                 <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
-                  Observed {formatDate(report.observed_at)} ·{' '}
-                  {report.farmer_severity}
-                  {report.farmer_severity_range
-                    ? ` · ${report.farmer_severity_range}`
+                  Observed {formatDate(report.observed_at)}
+                </Text>
+                <Text
+                  style={{
+                    color: severityColor(report.farmer_severity),
+                    fontSize: 11,
+                    fontWeight: '800',
+                    marginTop: 4,
+                  }}
+                >
+                  Farmer severity: {normalizedSeverity(report.farmer_severity)}
+                  {report.farmer_severity_range ||
+                  severityRange(report.farmer_severity)
+                    ? ` · ${report.farmer_severity_range || severityRange(report.farmer_severity)} damage`
                     : ''}
                 </Text>
                 <Pressable
@@ -445,6 +502,14 @@ export function MapScreen({
                 </Pressable>
               </View>
             ))}
+            {selected.visibleReports.length === 0 ? (
+              <Text
+                style={{ color: colors.muted, fontSize: 11, marginTop: 10 }}
+              >
+                No farmer report has been submitted for this consented farm yet.
+                Its gray marker means no report is on record.
+              </Text>
+            ) : null}
           </>
         ) : (
           <Text style={{ color: colors.muted, fontSize: 12, marginTop: 9 }}>

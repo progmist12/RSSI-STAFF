@@ -31,6 +31,8 @@ import {
   StaffProfile,
   StaffSession,
   ReviewForm,
+  StaffVisit,
+  VisitCheckingInput,
 } from './types';
 import makeStyles from './styles';
 import { LoginScreen } from './screens/LoginScreen';
@@ -95,9 +97,11 @@ export default function StaffApp() {
   const [farmerTotal, setFarmerTotal] = useState(0);
   const [reportPage, setReportPage] = useState(1);
   const [farmerPage, setFarmerPage] = useState(1);
-  const [loadingMore, setLoadingMore] = useState<'reports' | 'farmers' | null>(
-    null,
-  );
+  const [visits, setVisits] = useState<StaffVisit[]>([]);
+  const [visitTotal, setVisitTotal] = useState(0);
+  const [visitPage, setVisitPage] = useState(1);
+  const [visitBusy, setVisitBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState<'reports' | 'farmers' | 'visits' | null>(null);
   const [selectedReport, setSelectedReport] = useState<FieldReport | null>(
     null,
   );
@@ -139,6 +143,9 @@ export default function StaffApp() {
           ) ??
           0,
       );
+      setVisits(snapshot.visits || []);
+      setVisitTotal(snapshot.visitTotal || 0);
+      setVisitPage(snapshot.visitPage || 1);
       setReportTotal(snapshot.reportTotal || 0);
       setFarmerTotal(snapshot.farmerTotal || 0);
       setPendingTotal(snapshot.pendingTotal || 0);
@@ -209,6 +216,9 @@ export default function StaffApp() {
       setFarmers([]);
       setMapLocations([]);
       setMapReportTotal(0);
+      setVisits([]);
+      setVisitTotal(0);
+      setVisitPage(1);
       setSelectedReport(null);
       setSelectedFarmer(null);
       setPassword('');
@@ -286,6 +296,7 @@ export default function StaffApp() {
         data: StaffMapLocation[];
         meta: { total_reports: number; location_count: number };
       }>('/staff/map-locations', token),
+      apiRequest<ApiPage<StaffVisit>>('/staff/visits?page=1&pageSize=50', token),
     ]);
     let unauthorized = false;
     const reportResult = tasks[0];
@@ -349,6 +360,16 @@ export default function StaffApp() {
       requestErrorRef.current = true;
       unauthorized ||=
         mapResult.reason instanceof ApiError && mapResult.reason.status === 401;
+    }
+    const visitResult = tasks[4];
+    if (visitResult.status === 'fulfilled') {
+      setVisits(visitResult.value.data || []);
+      setVisitTotal(visitResult.value.meta?.total ?? visitResult.value.data.length);
+      setVisitPage(visitResult.value.meta?.page ?? 1);
+    } else {
+      requestErrorRef.current = true;
+      unauthorized ||=
+        visitResult.reason instanceof ApiError && visitResult.reason.status === 401;
     }
     if (unauthorized) {
       showNotice('Your session expired. Please sign in again.', 'error');
@@ -443,6 +464,9 @@ export default function StaffApp() {
       farmers,
       mapLocations,
       mapReportTotal,
+      visits,
+      visitTotal,
+      visitPage,
       reportTotal,
       farmerTotal,
       pendingTotal,
@@ -454,6 +478,9 @@ export default function StaffApp() {
     farmers,
     mapLocations,
     mapReportTotal,
+    visits,
+    visitTotal,
+    visitPage,
     farmerPage,
     farmerTotal,
     pendingTotal,
@@ -692,10 +719,10 @@ export default function StaffApp() {
     }
   };
 
-  const loadMore = async (kind: 'reports' | 'farmers') => {
+  const loadMore = async (kind: 'reports' | 'farmers' | 'visits') => {
     if (!session?.token || loadingMore || refreshing) return;
     setLoadingMore(kind);
-    const nextPage = kind === 'reports' ? reportPage + 1 : farmerPage + 1;
+    const nextPage = kind === 'reports' ? reportPage + 1 : kind === 'visits' ? visitPage + 1 : farmerPage + 1;
     try {
       if (kind === 'reports') {
         const response = await apiRequest<ApiPage<FieldReport>>(
@@ -711,6 +738,17 @@ export default function StaffApp() {
         });
         setReportTotal(response.meta?.total ?? reportTotal);
         setReportPage(response.meta?.page ?? nextPage);
+      } else if (kind === 'visits') {
+        const response = await apiRequest<ApiPage<StaffVisit>>(
+          `/staff/visits?page=${nextPage}&pageSize=50`,
+          session.token,
+        );
+        setVisits(items => {
+          const knownIds = new Set(items.map(item => item.id));
+          return [...items, ...response.data.filter(item => !knownIds.has(item.id))];
+        });
+        setVisitTotal(response.meta?.total ?? visitTotal);
+        setVisitPage(response.meta?.page ?? nextPage);
       } else {
         const response = await apiRequest<ApiPage<Farmer>>(
           `/staff/farmers?page=${nextPage}&pageSize=50`,
@@ -733,6 +771,47 @@ export default function StaffApp() {
       );
     } finally {
       setLoadingMore(null);
+    }
+  };
+
+  const createVisit = async (reportId: number, values: { scheduledAt: string; visitFindings: string; checkings: VisitCheckingInput[] }): Promise<StaffVisit | null> => {
+    if (!session?.token || !online) return null;
+    setVisitBusy(true);
+    try {
+      const response = await apiRequest<{ data: StaffVisit }>(
+        `/staff/reports/${reportId}/visits`,
+        session.token,
+        { method: 'POST', body: JSON.stringify(values) },
+      );
+      setVisits(items => [response.data, ...items]);
+      setVisitTotal(total => total + 1);
+      showNotice('Follow-up visit scheduled.', 'success');
+      return response.data;
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : 'Visit could not be scheduled.', 'error');
+      return null;
+    } finally {
+      setVisitBusy(false);
+    }
+  };
+
+  const updateVisit = async (visitId: number, values: { status: StaffVisit['status']; scheduledAt: string; visitFindings: string; checkings: VisitCheckingInput[] }): Promise<StaffVisit | null> => {
+    if (!session?.token || !online) return null;
+    setVisitBusy(true);
+    try {
+      const response = await apiRequest<{ data: StaffVisit }>(
+        `/staff/visits/${visitId}`,
+        session.token,
+        { method: 'PUT', body: JSON.stringify(values) },
+      );
+      setVisits(items => items.map(item => item.id === visitId ? response.data : item));
+      showNotice(response.data.status === 'completed' ? 'Visit findings saved and visit completed.' : response.data.status === 'cancelled' ? 'Visit cancelled.' : 'Visit record saved.', 'success');
+      return response.data;
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : 'Visit record could not be saved.', 'error');
+      return null;
+    } finally {
+      setVisitBusy(false);
     }
   };
 
@@ -1044,12 +1123,18 @@ export default function StaffApp() {
         ) : null}
         {!selectedReport && !selectedFarmer && tab === 'visits' ? (
           <VisitsScreen
+            visits={visits}
+            visitTotal={visitTotal}
             reports={reports}
             reportTotal={reportTotal}
             online={online}
             loadingMore={loadingMore}
             refreshing={refreshing}
+            visitBusy={visitBusy}
+            canManage={Boolean(session.scopes.includes('reports:review'))}
             onLoadMore={loadMore}
+            onCreateVisit={createVisit}
+            onUpdateVisit={updateVisit}
             onOpenReport={openReport}
             styles={styles}
             colors={colors}

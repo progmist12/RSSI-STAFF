@@ -19,6 +19,11 @@ const messages: Record<string, string> = {
   report_not_found: 'This report is no longer available.',
   server_unavailable: 'The RSSI service could not be reached. Check your connection and try again.',
   invalid_follow_up_date: 'Enter the follow-up date as YYYY-MM-DD.',
+  invalid_visit_date: 'Enter the visit date using YYYY-MM-DD.',
+  invalid_visit_checkings: 'One or more visit checks have invalid details.',
+  active_visit_exists: 'Complete or cancel the current scheduled visit first.',
+  visit_not_found: 'This field visit is no longer available.',
+  visit_is_locked: 'Completed and cancelled visits are preserved as history.',
 };
 
 async function decode<T>(response: Response): Promise<T> {

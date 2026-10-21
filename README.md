@@ -6,9 +6,11 @@ React Native mobile workspace for authorized Sugar Regulatory Administration sta
 
 - Sign in through the RSSI backend using a staff account.
 - View province-scoped report and farmer records from the live API.
+- View reported damage severity on the map, with gray markers for consented farms that have no report yet.
 - Search and filter reports by verification status.
 - Open report details and authenticated photo evidence.
 - Submit a verification result, independent SRA severity, reviewer notes, rationale, and optional follow-up date when the account has review permission.
+- Schedule follow-up visits for reports, capture itemized field checks and findings, then complete or cancel the visit. Cached visits remain viewable offline; visit changes need a connection.
 - View farmer profiles and their registered farm properties, subject to backend privacy rules.
 - Choose System, Light, or Dark appearance. The preference is stored on the device.
 - Refresh by pull-down, when connectivity returns, and when the app becomes active again.
@@ -29,6 +31,9 @@ On macOS, install CocoaPods after adding native dependencies with `cd ios && bun
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/me`
 - `GET /api/v1/staff/reports`
+- `GET /api/v1/staff/visits`
+- `POST /api/v1/staff/reports/{reportId}/visits`
+- `PUT /api/v1/staff/visits/{id}`
 - `GET /api/v1/staff/map-locations`
 - `GET /api/v1/staff/reports/{id}`
 - `PUT /api/v1/staff/reports/{id}/review`

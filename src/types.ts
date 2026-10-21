@@ -62,6 +62,42 @@ export type FieldReport = {
   follow_up_at?: string | null;
 };
 
+export type VisitCheckingResult =
+  | 'observed'
+  | 'not_observed'
+  | 'checked'
+  | 'unable_to_check';
+
+export type VisitCheckingInput = {
+  label: string;
+  result: VisitCheckingResult;
+  finding: string;
+};
+
+export type StaffVisit = {
+  id: number;
+  report_id: number;
+  report_code: string;
+  property_name: string;
+  farmer_name: string;
+  province: string;
+  municipality: string;
+  scheduled_at: string;
+  completed_at: string | null;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  visit_findings: string | null;
+  staff_name: string | null;
+  completed_by_name: string | null;
+  checkings: Array<{
+    id: number;
+    label: string;
+    result: VisitCheckingResult;
+    finding: string | null;
+  }>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type StaffMapReport = {
   id: number;
   code: string;

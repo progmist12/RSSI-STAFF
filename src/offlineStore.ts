@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Farmer, FieldReport, ReviewForm, StaffMapLocation } from './types';
+import { Farmer, FieldReport, ReviewForm, StaffMapLocation, StaffVisit } from './types';
 
 export type PendingReview = {
   reportId: number;
@@ -20,6 +20,9 @@ export type WorkspaceSnapshot = {
   farmers: Farmer[];
   mapLocations?: StaffMapLocation[];
   mapReportTotal?: number;
+  visits?: StaffVisit[];
+  visitTotal?: number;
+  visitPage?: number;
   reportTotal: number;
   farmerTotal: number;
   pendingTotal: number;

@@ -1,12 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
-import Svg, {
-  Circle,
-  Line,
-  Path,
-  Rect,
-  Text as SvgText,
-} from 'react-native-svg';
+import {
+  Camera,
+  Map,
+  Marker,
+  type CameraRef,
+} from '@maplibre/maplibre-react-native';
 import { FarmProperty, Farmer, FieldReport } from '../types';
 import { Palette } from '../theme';
 import { formatDate } from '../utils';
@@ -16,14 +15,7 @@ type MapSite = {
   property: FarmProperty;
   farmer: Farmer;
   report?: FieldReport;
-  x: number;
-  y: number;
 };
-
-const islandPath =
-  'M177 0L207 3L239 26L227 60L204 90L186 118L175 157L145 193L115 220L81 251L51 278L17 272L0 250L22 222L37 201L27 185L51 147L52 120L69 93L95 67L120 50L131 29L155 23L177 0Z';
-const orientalPath =
-  'M163 0H173L205 23L193 57L170 87L152 115L141 154L111 190L81 217L47 248L17 275L0 271V257L31 210L66 178L88 142L95 108L126 75L135 40L163 0Z';
 
 const provinceOptions = [
   'Both provinces',
@@ -38,32 +30,26 @@ function markerColor(status: string | undefined, colors: Palette) {
   return colors.amber;
 }
 
-function coordinate(latitude: number, longitude: number) {
-  const lng = Math.min(123.45, Math.max(122.3, longitude));
-  const lat = Math.min(11, Math.max(9, latitude));
-  return {
-    x: 40 + ((lng - 122.3) / (123.45 - 122.3)) * 239,
-    y: 7 + ((11 - lat) / 2) * 278,
-  };
-}
-
 export function MapScreen({
   reports,
   farmers,
   colors,
   onOpenReport,
+  online,
 }: {
   reports: FieldReport[];
   farmers: Farmer[];
   colors: Palette;
   onOpenReport: (report: FieldReport) => void;
+  online: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [provinceIndex, setProvinceIndex] = useState(0);
   const [statusIndex, setStatusIndex] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [center, setCenter] = useState({ x: 160, y: 146 });
+  const [zoom, setZoom] = useState(8.2);
+  const camera = useRef<CameraRef>(null);
+  const [mapFailed, setMapFailed] = useState(false);
 
   const sites = useMemo(() => {
     const properties = farmers.flatMap(farmer =>
@@ -87,13 +73,11 @@ export function MapScreen({
             item.property_name.toLocaleLowerCase() ===
               property.name.toLocaleLowerCase(),
         );
-        const point = coordinate(property.latitude!, property.longitude!);
         return {
           key: `${farmer.id}-${property.id}`,
           property,
           farmer,
           report,
-          ...point,
         };
       });
   }, [farmers, reports]);
@@ -122,12 +106,6 @@ export function MapScreen({
 
   const selected =
     filteredSites.find(site => site.key === selectedKey) || filteredSites[0];
-  const viewWidth = 320 / zoom;
-  const viewHeight = 286 / zoom;
-  const viewBox = `${center.x - viewWidth / 2} ${
-    center.y - viewHeight / 2
-  } ${viewWidth} ${viewHeight}`;
-
   const cycleProvince = () =>
     setProvinceIndex(index => (index + 1) % provinceOptions.length);
   const cycleStatus = () =>
@@ -203,91 +181,117 @@ export function MapScreen({
           borderColor: colors.line,
         }}
       >
-        <Svg width="100%" height="100%" viewBox={viewBox}>
-          <Rect x="0" y="0" width="340" height="300" fill="#E8F1EF" />
-          {[45, 90, 135, 180, 225, 270].map(value => (
-            <Line
-              key={`v-${value}`}
-              x1={value}
-              y1="0"
-              x2={value}
-              y2="300"
-              stroke="#DDEAE6"
-              strokeWidth="0.7"
-            />
-          ))}
-          {[40, 85, 130, 175, 220, 265].map(value => (
-            <Line
-              key={`h-${value}`}
-              x1="0"
-              y1={value}
-              x2="340"
-              y2={value}
-              stroke="#DDEAE6"
-              strokeWidth="0.7"
-            />
-          ))}
-          <Path
-            d={islandPath}
-            transform="translate(40 7)"
-            fill="#E0EBCF"
-            stroke="#A1B98E"
-            strokeWidth="1.4"
+        <Map
+          style={{ flex: 1 }}
+          mapStyle="https://tiles.openfreemap.org/styles/liberty"
+          attribution
+          attributionPosition={{ bottom: 8, right: 8 }}
+          logo={false}
+          compass
+          compassPosition={{ top: 10, left: 10 }}
+          onRegionDidChange={event => setZoom(event.nativeEvent.zoom)}
+          onDidFinishLoadingMap={() => setMapFailed(false)}
+          onDidFailLoadingMap={() => setMapFailed(true)}
+        >
+          <Camera
+            ref={camera}
+            initialViewState={{ center: [122.9, 10.25], zoom: 8.2 }}
+            minZoom={6}
+            maxZoom={18}
           />
-          <Path d={orientalPath} transform="translate(74 10)" fill="#CFDFBA" />
-          <Path
-            d="M218 14L200 51L183 81L166 111L153 148L127 180L102 207L81 234L57 270"
-            fill="none"
-            stroke="#9AB589"
-            strokeWidth="1"
-            strokeDasharray="3 3"
-          />
-          <SvgText x="4" y="132" fontSize="7" fontWeight="700" fill="#567466">
-            NEGROS OCCIDENTAL
-          </SvgText>
-          <SvgText x="220" y="243" fontSize="7" fontWeight="700" fill="#567466">
-            NEGROS ORIENTAL
-          </SvgText>
           {filteredSites.map(site => {
             const color = markerColor(site.report?.verification_status, colors);
             const isSelected = selected?.key === site.key;
             return (
-              <Circle
+              <Marker
                 key={site.key}
-                cx={site.x}
-                cy={site.y}
-                r={isSelected ? 8 : 6}
-                fill={color}
-                stroke="#FFFFFF"
-                strokeWidth={isSelected ? 3 : 2}
+                id={site.key}
+                lngLat={[site.property.longitude!, site.property.latitude!]}
                 onPress={() => setSelectedKey(site.key)}
-              />
+                anchor="center"
+              >
+                <View
+                  style={{
+                    width: isSelected ? 20 : 15,
+                    height: isSelected ? 20 : 15,
+                    borderRadius: 12,
+                    backgroundColor: color,
+                    borderWidth: isSelected ? 3 : 2,
+                    borderColor: '#FFFFFF',
+                    elevation: 4,
+                  }}
+                />
+              </Marker>
             );
           })}
-          <SvgText x="290" y="19" fontSize="9" fontWeight="700" fill="#1E3A5F">
-            N ↑
-          </SvgText>
-        </Svg>
+        </Map>
+        {mapFailed ? (
+          <View
+            style={{
+              position: 'absolute',
+              left: 10,
+              right: 58,
+              top: 10,
+              padding: 8,
+              borderRadius: 8,
+              backgroundColor: '#FFFFFFE8',
+            }}
+          >
+            <Text style={{ color: '#27364B', fontSize: 11 }}>
+              {online
+                ? 'Map tiles could not load. Check your connection and try again.'
+                : 'Basemap needs internet. Your cached reports and markers remain available.'}
+            </Text>
+          </View>
+        ) : null}
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 8,
+            bottom: 8,
+            paddingHorizontal: 6,
+            paddingVertical: 3,
+            borderRadius: 4,
+            backgroundColor: '#FFFFFFE8',
+          }}
+        >
+          <Text style={{ color: '#27364B', fontSize: 9 }}>
+            © OpenStreetMap contributors
+          </Text>
+        </View>
         <View style={{ position: 'absolute', right: 10, top: 66, gap: 6 }}>
           <MapControl
             label="Zoom in"
             text="+"
             colors={colors}
-            onPress={() => setZoom(value => Math.min(2.4, value + 0.2))}
+            onPress={() => {
+              const nextZoom = Math.min(18, zoom + 1);
+              setZoom(nextZoom);
+              camera.current?.zoomTo(nextZoom, { duration: 250 });
+            }}
           />
           <MapControl
             label="Zoom out"
             text="−"
             colors={colors}
-            onPress={() => setZoom(value => Math.max(1, value - 0.2))}
+            onPress={() => {
+              const nextZoom = Math.max(6, zoom - 1);
+              setZoom(nextZoom);
+              camera.current?.zoomTo(nextZoom, { duration: 250 });
+            }}
           />
           <MapControl
             label="Reset map view"
             text="◎"
             colors={colors}
             onPress={() => {
-              setZoom(1);
-              setCenter({ x: 160, y: 146 });
+              camera.current?.flyTo({
+                center: [122.9, 10.25],
+                zoom: 8.2,
+                duration: 500,
+              });
+              setZoom(8.2);
             }}
           />
         </View>
@@ -343,7 +347,9 @@ export function MapScreen({
           }}
         >
           Only consented property coordinates are shown. Map markers support
-          field review and are not for navigation.
+          field review and are not for navigation. The live OpenStreetMap
+          basemap requires internet; cached workspace records remain available
+          offline.
         </Text>
       </View>
 

@@ -1001,6 +1001,7 @@ export default function StaffApp() {
             reports={reports}
             farmers={farmers}
             colors={colors}
+            online={online}
             onOpenReport={openReport}
           />
         ) : null}

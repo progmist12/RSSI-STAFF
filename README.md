@@ -29,6 +29,7 @@ On macOS, install CocoaPods after adding native dependencies with `cd ios && bun
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/me`
 - `GET /api/v1/staff/reports`
+- `GET /api/v1/staff/map-locations`
 - `GET /api/v1/staff/reports/{id}`
 - `PUT /api/v1/staff/reports/{id}/review`
 - `GET /api/v1/staff/farmers`

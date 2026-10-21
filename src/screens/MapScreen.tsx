@@ -6,15 +6,12 @@ import {
   Marker,
   type CameraRef,
 } from '@maplibre/maplibre-react-native';
-import { FarmProperty, Farmer, FieldReport } from '../types';
+import { StaffMapLocation, StaffMapReport } from '../types';
 import { Palette } from '../theme';
 import { formatDate } from '../utils';
 
-type MapSite = {
-  key: string;
-  property: FarmProperty;
-  farmer: Farmer;
-  report?: FieldReport;
+type VisibleLocation = StaffMapLocation & {
+  visibleReports: StaffMapReport[];
 };
 
 const provinceOptions = [
@@ -31,16 +28,16 @@ function markerColor(status: string | undefined, colors: Palette) {
 }
 
 export function MapScreen({
-  reports,
-  farmers,
+  locations,
+  totalReports,
   colors,
   onOpenReport,
   online,
 }: {
-  reports: FieldReport[];
-  farmers: Farmer[];
+  locations: StaffMapLocation[];
+  totalReports: number;
   colors: Palette;
-  onOpenReport: (report: FieldReport) => void;
+  onOpenReport: (reportId: number) => void;
   online: boolean;
 }) {
   const [query, setQuery] = useState('');
@@ -51,61 +48,52 @@ export function MapScreen({
   const camera = useRef<CameraRef>(null);
   const [mapFailed, setMapFailed] = useState(false);
 
-  const sites = useMemo(() => {
-    const properties = farmers.flatMap(farmer =>
-      (farmer.properties || []).map(property => ({ farmer, property })),
-    );
-    return properties
-      .filter(
-        ({ property }) =>
-          property.location_consent === true &&
-          typeof property.latitude === 'number' &&
-          typeof property.longitude === 'number' &&
-          property.latitude >= 8.9 &&
-          property.latitude <= 11.1 &&
-          property.longitude >= 122.2 &&
-          property.longitude <= 123.6,
-      )
-      .map(({ farmer, property }) => {
-        const report = reports.find(
-          item =>
-            item.property_id === property.id ||
-            item.property_name.toLocaleLowerCase() ===
-              property.name.toLocaleLowerCase(),
-        );
-        return {
-          key: `${farmer.id}-${property.id}`,
-          property,
-          farmer,
-          report,
-        };
-      });
-  }, [farmers, reports]);
-
-  const filteredSites = useMemo(() => {
+  const filteredLocations = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    return sites.filter(site => {
-      const matchesProvince =
-        provinceIndex === 0 ||
-        site.property.province === provinceOptions[provinceIndex];
-      const matchesStatus =
-        statusIndex === 0 ||
-        site.report?.verification_status === statusOptions[statusIndex];
-      const matchesSearch =
-        !needle ||
-        [
-          site.property.name,
-          site.property.municipality,
-          site.property.province,
-          site.farmer.name,
-          site.report?.code,
-        ].some(value => value?.toLocaleLowerCase().includes(needle));
-      return matchesProvince && matchesStatus && matchesSearch;
-    });
-  }, [sites, query, provinceIndex, statusIndex]);
+    return locations
+      .map((location, index) => {
+        if (
+          provinceIndex !== 0 &&
+          location.province !== provinceOptions[provinceIndex]
+        ) {
+          return null;
+        }
+        const placeMatches =
+          !needle ||
+          `${location.title} ${location.detail} ${location.municipality || ''}`
+            .toLocaleLowerCase()
+            .includes(needle);
+        let visibleReports = location.reports.filter(
+          report =>
+            statusIndex === 0 ||
+            report.verification_status === statusOptions[statusIndex],
+        );
+        if (needle && !placeMatches) {
+          visibleReports = visibleReports.filter(report =>
+            `${report.code} ${report.property_name}`
+              .toLocaleLowerCase()
+              .includes(needle),
+          );
+        }
+        if (!visibleReports.length) return null;
+        return {
+          ...location,
+          key: `${location.location_type}-${location.province}-${location.municipality || location.title}-${index}`,
+          visibleReports,
+        };
+      })
+      .filter((location): location is VisibleLocation & { key: string } =>
+        Boolean(location),
+      );
+  }, [locations, provinceIndex, query, statusIndex]);
 
   const selected =
-    filteredSites.find(site => site.key === selectedKey) || filteredSites[0];
+    filteredLocations.find(location => location.key === selectedKey) ||
+    filteredLocations[0];
+  const visibleReportCount = filteredLocations.reduce(
+    (total, location) => total + location.visibleReports.length,
+    0,
+  );
   const cycleProvince = () =>
     setProvinceIndex(index => (index + 1) % provinceOptions.length);
   const cycleStatus = () =>
@@ -125,15 +113,16 @@ export function MapScreen({
           Negros coverage
         </Text>
         <Text style={{ color: colors.muted, fontSize: 12, marginTop: 5 }}>
-          Locate reported sites and prioritize field validation.
+          All submitted reports appear at a consented farm pin or an approximate
+          municipality center.
         </Text>
       </View>
 
       <TextInput
-        accessibilityLabel="Search map sites"
+        accessibilityLabel="Search map reports"
         value={query}
         onChangeText={setQuery}
-        placeholder="Search city, property or report"
+        placeholder="Search municipality, property or report"
         placeholderTextColor={colors.muted}
         style={{
           minHeight: 46,
@@ -164,10 +153,10 @@ export function MapScreen({
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text style={{ color: colors.ink, fontSize: 12, fontWeight: '700' }}>
-          {sites.length} mapped sites
+          {visibleReportCount} of {totalReports} reports
         </Text>
         <Text style={{ color: colors.muted, fontSize: 11 }}>
-          {sites.filter(site => site.report).length} report markers
+          {filteredLocations.length} map locations
         </Text>
       </View>
 
@@ -189,7 +178,9 @@ export function MapScreen({
           logo={false}
           compass
           compassPosition={{ top: 10, left: 10 }}
-          onRegionDidChange={event => setZoom(event.nativeEvent.zoom)}
+          onRegionDidChange={(event: { nativeEvent: { zoom: number } }) =>
+            setZoom(event.nativeEvent.zoom)
+          }
           onDidFinishLoadingMap={() => setMapFailed(false)}
           onDidFailLoadingMap={() => setMapFailed(true)}
         >
@@ -199,28 +190,38 @@ export function MapScreen({
             minZoom={6}
             maxZoom={18}
           />
-          {filteredSites.map(site => {
-            const color = markerColor(site.report?.verification_status, colors);
-            const isSelected = selected?.key === site.key;
+          {filteredLocations.map(location => {
+            const latest = location.visibleReports[0];
+            const color = markerColor(latest?.verification_status, colors);
+            const isSelected = selected?.key === location.key;
             return (
               <Marker
-                key={site.key}
-                id={site.key}
-                lngLat={[site.property.longitude!, site.property.latitude!]}
-                onPress={() => setSelectedKey(site.key)}
+                key={location.key}
+                id={location.key}
+                lngLat={[location.longitude, location.latitude]}
+                onPress={() => setSelectedKey(location.key)}
                 anchor="center"
               >
                 <View
                   style={{
-                    width: isSelected ? 20 : 15,
-                    height: isSelected ? 20 : 15,
-                    borderRadius: 12,
+                    minWidth: isSelected ? 25 : 22,
+                    height: isSelected ? 25 : 22,
+                    paddingHorizontal: 4,
+                    borderRadius: 14,
                     backgroundColor: color,
                     borderWidth: isSelected ? 3 : 2,
                     borderColor: '#FFFFFF',
                     elevation: 4,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
-                />
+                >
+                  <Text
+                    style={{ color: '#FFFFFF', fontSize: 9, fontWeight: '900' }}
+                  >
+                    {location.visibleReports.length}
+                  </Text>
+                </View>
               </Marker>
             );
           })}
@@ -240,7 +241,7 @@ export function MapScreen({
             <Text style={{ color: '#27364B', fontSize: 11 }}>
               {online
                 ? 'Map tiles could not load. Check your connection and try again.'
-                : 'Basemap needs internet. Your cached reports and markers remain available.'}
+                : 'Basemap needs internet. Your cached report markers remain available.'}
             </Text>
           </View>
         ) : null}
@@ -346,10 +347,10 @@ export function MapScreen({
             marginTop: 8,
           }}
         >
-          Only consented property coordinates are shown. Map markers support
-          field review and are not for navigation. The live OpenStreetMap
-          basemap requires internet; cached workspace records remain available
-          offline.
+          Farm pins appear only when location consent and staff permissions
+          allow. Other reports are grouped at municipality centers. Tap a pin to
+          open any report there. Basemap tiles need internet; saved report
+          locations remain available offline.
         </Text>
       </View>
 
@@ -364,10 +365,10 @@ export function MapScreen({
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           <Text style={{ color: colors.ink, fontSize: 16, fontWeight: '800' }}>
-            Selected site
+            Reports at this location
           </Text>
           <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700' }}>
-            {selected?.report?.code || selected?.farmer.reference || '—'}
+            {selected?.visibleReports.length || 0}
           </Text>
         </View>
         {selected ? (
@@ -375,56 +376,81 @@ export function MapScreen({
             <Text
               style={{
                 color: colors.ink,
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: '800',
                 marginTop: 10,
               }}
             >
-              {selected.property.name}
+              {selected.title}
             </Text>
             <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>
-              {selected.farmer.name} · {selected.property.municipality},{' '}
-              {selected.property.province}
+              {selected.detail}
+              {selected.location_type !== 'consented_farm'
+                ? ' · approximate location'
+                : ''}
             </Text>
-            {selected.report ? (
-              <>
-                <Text
-                  style={{ color: colors.muted, fontSize: 11, marginTop: 9 }}
+            {selected.visibleReports.map(report => (
+              <View
+                key={report.id}
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: colors.line,
+                  backgroundColor: colors.background,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                  }}
                 >
-                  {selected.report.verification_status} · Observed{' '}
-                  {formatDate(selected.report.observed_at)}
+                  <Text
+                    style={{ color: colors.ink, fontSize: 12, fontWeight: '800' }}
+                  >
+                    {report.code}
+                  </Text>
+                  <Text
+                    style={{ color: colors.muted, fontSize: 10, flexShrink: 1 }}
+                  >
+                    {report.verification_status}
+                  </Text>
+                </View>
+                <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
+                  Observed {formatDate(report.observed_at)} ·{' '}
+                  {report.farmer_severity}
+                  {report.farmer_severity_range
+                    ? ` · ${report.farmer_severity_range}`
+                    : ''}
                 </Text>
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => onOpenReport(selected.report!)}
+                  onPress={() => onOpenReport(report.id)}
                   style={{
-                    marginTop: 12,
+                    marginTop: 8,
                     backgroundColor: colors.blue,
-                    paddingVertical: 12,
-                    borderRadius: 10,
+                    paddingVertical: 9,
+                    borderRadius: 8,
                     alignItems: 'center',
                   }}
                 >
                   <Text
-                    style={{
-                      color: '#FFFFFF',
-                      fontWeight: '800',
-                      fontSize: 12,
-                    }}
+                    style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}
                   >
-                    Open report
+                    Open {report.code}
                   </Text>
                 </Pressable>
-              </>
-            ) : (
-              <Text style={{ color: colors.muted, fontSize: 11, marginTop: 9 }}>
-                No report is linked to this site.
-              </Text>
-            )}
+              </View>
+            ))}
           </>
         ) : (
           <Text style={{ color: colors.muted, fontSize: 12, marginTop: 9 }}>
-            No consented property coordinates are available for this map filter.
+            {totalReports
+              ? 'No reports match these filters. Choose another province or status.'
+              : 'No field reports have been submitted yet.'}
           </Text>
         )}
       </View>

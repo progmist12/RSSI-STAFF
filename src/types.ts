@@ -62,6 +62,31 @@ export type FieldReport = {
   follow_up_at?: string | null;
 };
 
+export type StaffMapReport = {
+  id: number;
+  code: string;
+  property_name: string;
+  farmer_severity: string;
+  farmer_severity_range?: string | null;
+  verification_status: string;
+  observed_at: string;
+  submitted_at: string;
+};
+
+export type StaffMapLocation = {
+  latitude: number;
+  longitude: number;
+  title: string;
+  detail: string;
+  province: string;
+  municipality: string | null;
+  location_type: 'consented_farm' | 'approximate_municipality' | 'approximate_province';
+  farmer_severity: string | null;
+  farmer_severity_range?: string | null;
+  report_count: number;
+  reports: StaffMapReport[];
+};
+
 export type ApiPage<T> = {
   data: T[];
   meta: { page: number; page_size: number; total: number };

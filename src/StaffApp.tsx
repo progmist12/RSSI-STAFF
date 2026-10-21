@@ -8,30 +8,26 @@ import React, {
 import {
   ActivityIndicator,
   AppState,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
-  TextInput,
   View,
-  Image,
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { ApiError, apiRequest, photoUrl, staffLogin } from './api';
+import { ApiError, apiRequest, staffLogin } from './api';
 import { clearSession, readSession, saveSession } from './session';
-import { ThemeMode, useTheme } from './theme';
+import { useTheme } from './theme';
 import {
   ApiPage,
   Farmer,
   FieldReport,
+  StaffMapLocation,
   StaffProfile,
   StaffSession,
   ReviewForm,
@@ -78,15 +74,6 @@ function reviewPayload(review: ReviewForm) {
   };
 }
 
-const verificationOptions = ['For verification', 'Confirmed', 'No detection'];
-const severityOptions = [
-  'Not assessed',
-  'Mild',
-  'Moderate',
-  'Severe',
-  'Highly severe',
-];
-
 export default function StaffApp() {
   const { colors, mode, resolved, setMode } = useTheme();
   const insets = useSafeAreaInsets();
@@ -100,6 +87,8 @@ export default function StaffApp() {
   const [tab, setTab] = useState<Tab>('home');
   const [reports, setReports] = useState<FieldReport[]>([]);
   const [farmers, setFarmers] = useState<Farmer[]>([]);
+  const [mapLocations, setMapLocations] = useState<StaffMapLocation[]>([]);
+  const [mapReportTotal, setMapReportTotal] = useState(0);
   const [pendingTotal, setPendingTotal] = useState(0);
   const [reportTotal, setReportTotal] = useState(0);
   const [farmerTotal, setFarmerTotal] = useState(0);
@@ -141,6 +130,15 @@ export default function StaffApp() {
     if (snapshot) {
       setReports(snapshot.reports || []);
       setFarmers(snapshot.farmers || []);
+      setMapLocations(snapshot.mapLocations || []);
+      setMapReportTotal(
+        snapshot.mapReportTotal ??
+          snapshot.mapLocations?.reduce(
+            (total, location) => total + location.report_count,
+            0,
+          ) ??
+          0,
+      );
       setReportTotal(snapshot.reportTotal || 0);
       setFarmerTotal(snapshot.farmerTotal || 0);
       setPendingTotal(snapshot.pendingTotal || 0);
@@ -201,6 +199,8 @@ export default function StaffApp() {
       setSession(null);
       setReports([]);
       setFarmers([]);
+      setMapLocations([]);
+      setMapReportTotal(0);
       setSelectedReport(null);
       setSelectedFarmer(null);
       setPassword('');
@@ -274,6 +274,10 @@ export default function StaffApp() {
         token,
       ),
       apiRequest<ApiPage<Farmer>>('/staff/farmers?page=1&pageSize=50', token),
+      apiRequest<{
+        data: StaffMapLocation[];
+        meta: { total_reports: number; location_count: number };
+      }>('/staff/map-locations', token),
     ]);
     let unauthorized = false;
     const reportResult = tasks[0];
@@ -322,6 +326,21 @@ export default function StaffApp() {
       unauthorized ||=
         farmerResult.reason instanceof ApiError &&
         farmerResult.reason.status === 401;
+    }
+    const mapResult = tasks[3];
+    if (mapResult.status === 'fulfilled') {
+      setMapLocations(mapResult.value.data || []);
+      setMapReportTotal(
+        mapResult.value.meta?.total_reports ??
+          (mapResult.value.data || []).reduce(
+            (total, location) => total + location.report_count,
+            0,
+          ),
+      );
+    } else {
+      requestErrorRef.current = true;
+      unauthorized ||=
+        mapResult.reason instanceof ApiError && mapResult.reason.status === 401;
     }
     if (unauthorized) {
       showNotice('Your session expired. Please sign in again.', 'error');
@@ -425,6 +444,8 @@ export default function StaffApp() {
     void saveWorkspace(session.user.id, {
       reports,
       farmers,
+      mapLocations,
+      mapReportTotal,
       reportTotal,
       farmerTotal,
       pendingTotal,
@@ -434,6 +455,8 @@ export default function StaffApp() {
   }, [
     cacheReady,
     farmers,
+    mapLocations,
+    mapReportTotal,
     farmerPage,
     farmerTotal,
     pendingTotal,
@@ -481,19 +504,28 @@ export default function StaffApp() {
     }
   };
 
-  const openReport = async (report: FieldReport) => {
+  const openReport = async (reportOrId: FieldReport | number) => {
     if (!session) return;
+    const reportId = typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
+    const cachedReport =
+      typeof reportOrId === 'number'
+        ? reports.find(item => item.id === reportId)
+        : reportOrId;
     setBusy(true);
     setSelectedFarmer(null);
     try {
       if (!online) {
-        setSelectedReport(report);
-        setReview(reviewFromReport(report));
+        if (!cachedReport) {
+          showNotice('Connect to load this report’s full details.', 'info');
+          return;
+        }
+        setSelectedReport(cachedReport);
+        setReview(reviewFromReport(cachedReport));
         setPhotoFailed([]);
         return;
       }
       const response = await apiRequest<{ data: FieldReport }>(
-        `/staff/reports/${report.id}`,
+        `/staff/reports/${reportId}`,
         session.token,
       );
       setSelectedReport(response.data);
@@ -507,9 +539,13 @@ export default function StaffApp() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 0) {
         setOnline(false);
-        setSelectedReport(report);
-        setReview(reviewFromReport(report));
-        setPhotoFailed([]);
+        if (cachedReport) {
+          setSelectedReport(cachedReport);
+          setReview(reviewFromReport(cachedReport));
+          setPhotoFailed([]);
+        } else {
+          showNotice('Connect to load this report’s full details.', 'info');
+        }
         return;
       }
       showNotice(
@@ -998,8 +1034,8 @@ export default function StaffApp() {
         ) : null}
         {!selectedReport && !selectedFarmer && tab === 'map' ? (
           <MapScreen
-            reports={reports}
-            farmers={farmers}
+            locations={mapLocations}
+            totalReports={mapReportTotal}
             colors={colors}
             online={online}
             onOpenReport={openReport}

@@ -1,4 +1,5 @@
 import {StaffProfile} from './types';
+import type {Asset} from 'react-native-image-picker';
 
 // Shared test deployment used by the RSSI mobile clients. Keep this out of UI.
 const API_BASE_URL = 'https://groved-subdialectally-shellie.ngrok-free.dev';
@@ -24,6 +25,7 @@ const messages: Record<string, string> = {
   active_visit_exists: 'Complete or cancel the current scheduled visit first.',
   visit_not_found: 'This field visit is no longer available.',
   visit_is_locked: 'Completed and cancelled visits are preserved as history.',
+  invalid_profile_photo: 'Choose a JPEG, PNG, or WebP photo no larger than 5 MB.',
 };
 
 async function decode<T>(response: Response): Promise<T> {
@@ -67,5 +69,27 @@ export async function staffLogin(email: string, password: string) {
 
 export function photoUrl(url: string): string {
   return /^https?:\/\//i.test(url) ? url : `${API_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+export async function uploadStaffProfilePhoto(token: string, photo: Asset): Promise<{profile_photo_url: string | null}> {
+  if (!photo.uri) throw new ApiError(422, 'invalid_profile_photo', messages.invalid_profile_photo);
+  const form = new FormData();
+  form.append('photo', {
+    uri: photo.uri,
+    name: photo.fileName || `rssi-staff-profile-${Date.now()}.jpg`,
+    type: photo.type || 'image/jpeg',
+  } as unknown as Blob);
+  const headers = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${token}`,
+    'ngrok-skip-browser-warning': 'true',
+  };
+  try {
+    const response = await fetch(`${API_ROOT}/me/profile-photo`, {method: 'POST', headers, body: form});
+    return await decode<{profile_photo_url: string | null}>(response);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(0, 'server_unavailable', messages.server_unavailable);
+  }
 }
 

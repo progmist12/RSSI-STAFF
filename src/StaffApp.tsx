@@ -8,6 +8,7 @@ import React, {
 import {
   ActivityIndicator,
   AppState,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,7 +21,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { ApiError, apiRequest, staffLogin } from './api';
+import { ApiError, apiRequest, photoUrl, staffLogin } from './api';
 import { clearSession, readSession, saveSession } from './session';
 import { useTheme } from './theme';
 import {
@@ -227,6 +228,14 @@ export default function StaffApp() {
     },
     [session],
   );
+
+  const updateStaffProfilePhoto = useCallback(async (profilePhotoUrl: string | null) => {
+    if (!session) return;
+    const updated = {...session, user: {...session.user, profile_photo_url: profilePhotoUrl}};
+    await saveSession(updated);
+    setSession(updated);
+    showNotice('Profile picture saved.', 'success');
+  }, [session, showNotice]);
 
   const flushPendingReviews = useCallback(async () => {
     if (!session?.token || !online) return;
@@ -991,7 +1000,18 @@ export default function StaffApp() {
               }}
               style={styles.profileButton}
             >
-              <Text style={styles.profileGlyph}>👤</Text>
+              {session.user.profile_photo_url ? (
+                <Image
+                  source={{
+                    uri: photoUrl(session.user.profile_photo_url),
+                    headers: { Authorization: `Bearer ${session.token}` },
+                  }}
+                  resizeMode="cover"
+                  style={styles.profileGlyphImage}
+                />
+              ) : (
+                <Text style={styles.profileGlyph}>👤</Text>
+              )}
             </Pressable>
           </View>
         ) : null}
@@ -1163,6 +1183,7 @@ export default function StaffApp() {
             styles={styles}
             colors={colors}
             onSignOut={() => void signOut()}
+            onProfilePhotoUpdated={updateStaffProfilePhoto}
           />
         ) : null}
       </ScrollView>

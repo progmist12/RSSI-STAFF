@@ -4,6 +4,7 @@ export type StaffProfile = {
   name: string;
   role: string;
   province_access: string;
+  profile_photo_url?: string | null;
 };
 
 export type StaffSession = {

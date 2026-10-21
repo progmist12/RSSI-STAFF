@@ -1,25 +1,76 @@
-import React from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
-import { photoUrl } from '../api';
-import { Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
+import React, { useState } from 'react';
+import { Image, Pressable, Text, View } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
+import type { Asset } from 'react-native-image-picker';
+import { photoUrl, uploadStaffProfilePhoto } from '../api';
 import { ThemeMode } from '../theme';
 import {
-  Choice,
-  EmptyCard,
   InfoLine,
-  PrimaryButton,
   SectionIntro,
   SectionTitle,
-  Badge,
 } from '../components/ui';
-import { formatDate, initials, roleName, severityStyle } from '../utils';
+import { initials, roleName } from '../utils';
 export function SettingsScreen({
   session,
   mode,
   setMode,
   styles,
   onSignOut,
+  onProfilePhotoUpdated,
 }: any) {
+  const [editingPhoto, setEditingPhoto] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<Asset | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  const photoUri = selectedPhoto?.uri || (session.user.profile_photo_url ? photoUrl(session.user.profile_photo_url) : null);
+
+  const choosePhoto = async () => {
+    setPhotoError('');
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'photo',
+        selectionLimit: 1,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 0.8,
+        assetRepresentationMode: 'compatible',
+      });
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        setPhotoError('Could not open your photo library. Try again.');
+        return;
+      }
+      const photo = result.assets?.[0];
+      if (!photo?.uri) {
+        setPhotoError('Choose a profile photo and try again.');
+        return;
+      }
+      if (typeof photo.fileSize === 'number' && photo.fileSize > 5 * 1024 * 1024) {
+        setPhotoError('Choose an image that is 5 MB or smaller.');
+        return;
+      }
+      setSelectedPhoto(photo);
+    } catch {
+      setPhotoError('Could not open your photo library. Try again.');
+    }
+  };
+
+  const savePhoto = async () => {
+    if (!selectedPhoto) return;
+    setPhotoBusy(true);
+    setPhotoError('');
+    try {
+      const uploaded = await uploadStaffProfilePhoto(session.token, selectedPhoto);
+      await onProfilePhotoUpdated(uploaded.profile_photo_url);
+      setSelectedPhoto(null);
+      setEditingPhoto(false);
+    } catch (error) {
+      setPhotoError(error instanceof Error ? error.message : 'Could not save your profile picture.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
   return (
     <View>
       <SectionIntro
@@ -30,14 +81,67 @@ export function SettingsScreen({
       />
       <View style={styles.profileCard}>
         <View style={styles.profileHero}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials(session.user.name)}</Text>
+          <View style={[styles.avatar, styles.avatarLarge, styles.profileAvatarPhoto]}>
+            {photoUri ? (
+              <Image
+                source={{
+                  uri: photoUri,
+                  ...(selectedPhoto ? {} : { headers: { Authorization: `Bearer ${session.token}` } }),
+                }}
+                resizeMode="cover"
+                style={styles.profilePhotoImage}
+              />
+            ) : (
+              <Text style={styles.avatarTextLarge}>{initials(session.user.name)}</Text>
+            )}
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.profileName}>{session.user.name}</Text>
             <Text style={styles.profileSub}>{session.user.email}</Text>
           </View>
         </View>
+        {editingPhoto ? (
+          <View style={styles.profilePhotoEditor}>
+            <Text style={styles.profilePhotoHint}>Choose a staff profile picture. Images must be 5 MB or smaller.</Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={photoBusy}
+              onPress={choosePhoto}
+              style={[styles.profilePhotoSecondaryButton, photoBusy && styles.buttonDisabled]}
+            >
+              <Text style={styles.profilePhotoSecondaryText}>{selectedPhoto ? 'Choose a different photo' : 'Choose photo'}</Text>
+            </Pressable>
+            <View style={styles.profilePhotoActions}>
+              {selectedPhoto ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={photoBusy}
+                  onPress={savePhoto}
+                  style={[styles.profilePhotoPrimaryButton, photoBusy && styles.buttonDisabled]}
+                >
+                  <Text style={styles.profilePhotoPrimaryText}>{photoBusy ? 'Saving…' : 'Save picture'}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                disabled={photoBusy}
+                onPress={() => { setEditingPhoto(false); setSelectedPhoto(null); setPhotoError(''); }}
+                style={styles.profilePhotoSecondaryButton}
+              >
+                <Text style={styles.profilePhotoSecondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+            {photoError ? <Text style={styles.profilePhotoError}>{photoError}</Text> : null}
+          </View>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => { setEditingPhoto(true); setSelectedPhoto(null); setPhotoError(''); }}
+            style={styles.profilePhotoSecondaryButton}
+          >
+            <Text style={styles.profilePhotoSecondaryText}>{session.user.profile_photo_url ? 'Edit profile picture' : 'Add profile picture'}</Text>
+          </Pressable>
+        )}
         <InfoLine
           label="Staff role"
           value={roleName(session.user.role)}

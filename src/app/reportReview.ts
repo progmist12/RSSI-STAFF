@@ -1,5 +1,12 @@
 import { FieldReport, ReviewForm } from '../types';
 
+export function reportIsCompleteWithoutVisit(report: FieldReport) {
+  return (
+    ['Confirmed', 'No detection'].includes(report.verification_status) &&
+    !report.follow_up_at
+  );
+}
+
 export function reviewFromReport(report: FieldReport): ReviewForm {
   return {
     verificationStatus: report.verification_status || 'For verification',

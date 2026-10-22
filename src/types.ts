@@ -78,6 +78,7 @@ export type VisitCheckingInput = {
 export type StaffVisit = {
   id: number;
   report_id: number;
+  property_id?: number | null;
   report_code: string;
   property_name: string;
   farmer_name: string;
@@ -117,7 +118,10 @@ export type StaffMapLocation = {
   detail: string;
   province: string;
   municipality: string | null;
-  location_type: 'consented_farm' | 'approximate_municipality' | 'approximate_province';
+  location_type:
+    | 'consented_farm'
+    | 'approximate_municipality'
+    | 'approximate_province';
   farmer_severity: string | null;
   farmer_severity_range?: string | null;
   report_count: number;

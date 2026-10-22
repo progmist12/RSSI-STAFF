@@ -7,7 +7,8 @@ export type AppIconName =
   | 'map'
   | 'reports'
   | 'visits'
-  | 'farmers';
+  | 'farmers'
+  | 'calendar';
 
 export function AppIcon({
   name,
@@ -72,6 +73,17 @@ export function AppIcon({
             backgroundColor: color,
           }}
         />
+      </View>
+    );
+  }
+
+  if (name === 'calendar') {
+    return (
+      <View style={{ width: size, height: size, borderWidth: stroke, borderColor: color, borderRadius: size * 0.14 }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, top: size * 0.3, height: stroke, backgroundColor: color }} />
+        <View style={{ position: 'absolute', left: size * 0.24, top: -size * 0.09, width: stroke, height: size * 0.28, backgroundColor: color, borderRadius: 2 }} />
+        <View style={{ position: 'absolute', right: size * 0.24, top: -size * 0.09, width: stroke, height: size * 0.28, backgroundColor: color, borderRadius: 2 }} />
+        {[0.32, 0.52, 0.72].map(x => [0.48, 0.68].map(y => <View key={`${x}-${y}`} style={{ position: 'absolute', left: size * x, top: size * y, width: size * 0.09, height: size * 0.09, borderRadius: size, backgroundColor: color }} />))}
       </View>
     );
   }

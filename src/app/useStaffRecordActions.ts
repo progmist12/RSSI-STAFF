@@ -15,11 +15,22 @@ import {
   readPendingReviews,
   savePendingReviews,
 } from '../offlineStore';
-import { reviewFromReport } from './reportReview';
+import { reportIsCompleteWithoutVisit, reviewFromReport } from './reportReview';
+import { syncFollowUpVisit } from './followUpVisits';
 
 export type LoadMoreKind = 'reports' | 'farmers' | 'visits';
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type NoticeKind = 'error' | 'success' | 'info';
+
+function reportHasReview(report: FieldReport) {
+  return Boolean(
+    report.verification_status !== 'For verification' ||
+      report.sra_severity ||
+      report.assessment_rationale?.trim() ||
+      report.reviewer_note?.trim() ||
+      report.follow_up_at,
+  );
+}
 
 type StaffRecordActionOptions = {
   session: StaffSession | null;
@@ -113,7 +124,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
   } = options;
 
   const openReport = async (reportOrId: FieldReport | number) => {
-    if (!session) return;
+    if (!session) return false;
     const reportId =
       typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
     const cachedReport =
@@ -126,12 +137,12 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       if (!online) {
         if (!cachedReport) {
           showNotice('Connect to load this report’s full details.', 'info');
-          return;
+          return false;
         }
         setSelectedReport(cachedReport);
         setReview(reviewFromReport(cachedReport));
         setPhotoFailed([]);
-        return;
+        return true;
       }
       const response = await apiRequest<{ data: FieldReport }>(
         `/staff/reports/${reportId}`,
@@ -145,6 +156,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       );
       setReview(reviewFromReport(response.data));
       setPhotoFailed([]);
+      return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 0) {
         setOnline(false);
@@ -155,12 +167,13 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         } else {
           showNotice('Connect to load this report’s full details.', 'info');
         }
-        return;
+        return Boolean(cachedReport);
       }
       showNotice(
         error instanceof Error ? error.message : 'Could not load this report.',
         'error',
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -217,6 +230,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       {
         reportId: selectedReport.id,
         review,
+        previousFollowUpAt: selectedReport.follow_up_at || '',
         updatedAt: new Date().toISOString(),
       },
     ];
@@ -228,16 +242,28 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     );
     addNotification(
       'Review saved on this device',
-      `${selectedReport.code} is queued and will sync when you are back online.`,
+      `${
+        selectedReport.code
+      } is queued and will sync when you are back online.${
+        review.followUpAt
+          ? ' Its follow-up visit will be scheduled during sync.'
+          : ''
+      }`,
     );
     showNotice(
-      'Review saved on this device. It will sync when you reconnect.',
+      review.followUpAt
+        ? 'Review saved on this device. The follow-up visit will be scheduled when you reconnect.'
+        : 'Review saved on this device. It will sync when you reconnect.',
       'success',
     );
   };
 
   const submitReview = async () => {
     if (!session || !selectedReport || !review) return;
+    if (reportIsCompleteWithoutVisit(selectedReport)) {
+      showNotice('This report is complete and locked for editing.', 'info');
+      return;
+    }
     if (!session.scopes.includes('reports:review')) {
       showNotice(
         'This staff account can view reports but cannot submit reviews.',
@@ -286,7 +312,40 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         reviewerNote: response.data.reviewer_note || '',
         followUpAt: response.data.follow_up_at || '',
       });
-      showNotice('Review saved to the RSSI workspace.', 'success');
+      let followUpSyncFailed = false;
+      if (followUpAt || selectedReport.follow_up_at) {
+        setVisitBusy(true);
+        try {
+          const result = await syncFollowUpVisit(
+            selectedReport.id,
+            followUpAt,
+            session.token,
+            visits,
+          );
+          if (result.visit) {
+            setVisits(items =>
+              result.created
+                ? [result.visit as StaffVisit, ...items]
+                : items.map(item =>
+                    item.id === result.visit?.id ? result.visit : item,
+                  ),
+            );
+            if (result.created) setVisitTotal(total => total + 1);
+          }
+        } catch {
+          followUpSyncFailed = true;
+        } finally {
+          setVisitBusy(false);
+        }
+      }
+      showNotice(
+        followUpSyncFailed
+          ? 'Review saved, but the follow-up visit could not be synchronized. Retry from the report or Visits.'
+          : followUpAt
+          ? 'Review saved and follow-up visit scheduled.'
+          : 'Review saved to the RSSI workspace.',
+        followUpSyncFailed ? 'error' : 'success',
+      );
       void refreshData();
     } catch (error) {
       if (error instanceof ApiError && error.status === 0) {
@@ -445,7 +504,15 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     () =>
       reports.filter(report => {
         const matchesFilter =
-          listFilter === 'All' || report.verification_status === listFilter;
+          listFilter === 'All' ||
+          (listFilter === 'Confirmed'
+            ? report.verification_status === 'Confirmed'
+            : listFilter === 'Reviewed'
+            ? reportHasReview(report) &&
+              report.verification_status !== 'Confirmed'
+            : listFilter === 'Needs review' || listFilter === 'For verification'
+            ? !reportHasReview(report)
+            : report.verification_status === listFilter);
         const query = search.trim().toLocaleLowerCase();
         const matchesSearch =
           !query ||

@@ -8,11 +8,13 @@ export function NotificationsPanel({
   notifications,
   colors,
   onClose,
+  onOpenReport,
 }: {
   visible: boolean;
   notifications: AppNotification[];
   colors: Palette;
   onClose: () => void;
+  onOpenReport: (reportId: number) => void;
 }) {
   return (
     <Modal
@@ -104,6 +106,25 @@ export function NotificationsPanel({
                   >
                     {new Date(item.createdAt).toLocaleString()}
                   </Text>
+                  {item.reportId ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`View report ${item.message}`}
+                      onPress={() => onOpenReport(item.reportId!)}
+                      style={{
+                        alignSelf: 'flex-start',
+                        marginTop: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderRadius: 9,
+                        backgroundColor: colors.blue,
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
+                        View report
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               ))
             ) : (

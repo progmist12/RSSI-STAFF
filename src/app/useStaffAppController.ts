@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   useStaffRecordActions,
   type LoadMoreKind,
 } from './useStaffRecordActions';
+import { syncFollowUpVisit } from './followUpVisits';
 import { reviewPayload } from './reportReview';
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import {
+  clearReportPhoneNotifications,
+  listenForReportNotificationPress,
+  notifyNewReport,
+  preparePhoneNotifications,
+  syncVisitReminders,
+} from './phoneNotifications';
 import { ApiError, apiRequest, staffLogin } from '../api';
 import { clearSession, readSession, saveSession } from '../session';
 import {
@@ -64,7 +73,7 @@ export function useStaffAppController() {
   const [selectedFarmer, setSelectedFarmer] = useState<Farmer | null>(null);
   const [review, setReview] = useState<ReviewForm | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [listFilter, setListFilter] = useState('All');
+  const [listFilter, setListFilter] = useState('Needs review');
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,6 +88,12 @@ export function useStaffAppController() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+  const seenReportIdsRef = useRef<Set<number> | null>(null);
+  const baseOpenReportRef = useRef<(report: FieldReport | number) => Promise<boolean>>(
+    async () => false,
+  );
+  const handledNotificationReportsRef = useRef(new Set<number>());
+  const pendingNotificationKey = 'rssi_staff_pending_report_open';
 
   const hydrateLocalData = useCallback(async (active: StaffSession) => {
     const [snapshot, queue, savedNotifications] = await Promise.all([
@@ -112,16 +127,28 @@ export function useStaffAppController() {
       item =>
         item.title !== 'Connection restored' &&
         item.title !== 'You are offline',
-    );
+    ).map(item => {
+      if (item.reportId) return item;
+      const report = snapshot?.reports?.find(candidate =>
+        item.message.includes(candidate.code),
+      );
+      return report ? { ...item, reportId: report.id } : item;
+    });
     setNotifications(reportNotifications);
     if (reportNotifications.length !== savedNotifications.length) {
+      void saveNotifications(active.user.id, reportNotifications);
+    } else if (
+      reportNotifications.some(
+        (item, index) => item.reportId !== savedNotifications[index]?.reportId,
+      )
+    ) {
       void saveNotifications(active.user.id, reportNotifications);
     }
     setCacheReady(true);
   }, []);
 
   const addNotification = useCallback(
-    (title: string, message: string) => {
+    (title: string, message: string, reportId?: number) => {
       if (!session) return;
       const item: AppNotification = {
         id: `${Date.now()}-${Math.random()}`,
@@ -129,6 +156,7 @@ export function useStaffAppController() {
         message,
         createdAt: new Date().toISOString(),
         read: false,
+        reportId,
       };
       setNotifications(current => {
         const next = [item, ...current].slice(0, 50);
@@ -221,6 +249,24 @@ export function useStaffAppController() {
         setSelectedReport(current =>
           current?.id === item.reportId ? result.data : current,
         );
+        if (item.review.followUpAt || item.previousFollowUpAt) {
+          const followUp = await syncFollowUpVisit(
+            item.reportId,
+            item.review.followUpAt,
+            session.token,
+            visits,
+          );
+          if (followUp.visit) {
+            setVisits(current =>
+              followUp.created
+                ? [followUp.visit as StaffVisit, ...current]
+                : current.map(visit =>
+                    visit.id === followUp.visit?.id ? followUp.visit : visit,
+                  ),
+            );
+            if (followUp.created) setVisitTotal(total => total + 1);
+          }
+        }
         remaining = remaining.filter(
           review => review.reportId !== item.reportId,
         );
@@ -243,7 +289,7 @@ export function useStaffAppController() {
         } sent to the RSSI workspace.`,
       );
     }
-  }, [addNotification, online, session]);
+  }, [addNotification, online, session, visits]);
 
   const refreshData = useCallback(async () => {
     if (!session?.token) return;
@@ -283,7 +329,37 @@ export function useStaffAppController() {
     let unauthorized = false;
     const reportResult = tasks[0];
     if (reportResult.status === 'fulfilled') {
-      setReports(reportResult.value.data || []);
+      const freshReports = reportResult.value.data || [];
+      const currentIds = new Set(freshReports.map(item => item.id));
+      setNotifications(current => {
+        let changed = false;
+        const linked = current.map(item => {
+          if (item.reportId) return item;
+          const report = freshReports.find(candidate =>
+            item.message.includes(candidate.code),
+          );
+          if (!report) return item;
+          changed = true;
+          return { ...item, reportId: report.id };
+        });
+        if (changed && session) void saveNotifications(session.user.id, linked);
+        return linked;
+      });
+      const previouslySeen = seenReportIdsRef.current;
+      if (previouslySeen) {
+        freshReports
+          .filter(item => !previouslySeen.has(item.id))
+          .forEach(item => {
+            void notifyNewReport(item.code, item.id).catch(() => undefined);
+            addNotification(
+              'New field report',
+              `${item.code} has been submitted and is ready to review.`,
+              item.id,
+            );
+          });
+      }
+      seenReportIdsRef.current = currentIds;
+      setReports(freshReports);
       setReportTotal(
         reportResult.value.meta?.total ?? reportResult.value.data.length,
       );
@@ -347,7 +423,8 @@ export function useStaffAppController() {
     }
     const visitResult = tasks[4];
     if (visitResult.status === 'fulfilled') {
-      setVisits(visitResult.value.data || []);
+      const latestVisits = visitResult.value.data || [];
+      setVisits(latestVisits);
       setVisitTotal(
         visitResult.value.meta?.total ?? visitResult.value.data.length,
       );
@@ -377,6 +454,7 @@ export function useStaffAppController() {
   }, [
     flushPendingReviews,
     online,
+    addNotification,
     selectedFarmer,
     selectedReport,
     session,
@@ -447,6 +525,53 @@ export function useStaffAppController() {
   useEffect(() => {
     if (session?.token && online) void refreshRef.current();
   }, [session?.token, online]);
+
+  useEffect(() => {
+    if (!session || !cacheReady) return;
+    void preparePhoneNotifications().catch(() => undefined);
+  }, [cacheReady, session?.user.id]);
+
+  useEffect(() => {
+    if (!session || !cacheReady) return;
+    void syncVisitReminders(visits).catch(() => undefined);
+  }, [cacheReady, session?.user.id, visits]);
+
+  useEffect(() => {
+    if (!session?.token) {
+      seenReportIdsRef.current = null;
+      return;
+    }
+    const pollReports = async () => {
+      if (!online || AppState.currentState !== 'active') return;
+      try {
+        const response = await apiRequest<ApiPage<FieldReport>>(
+          '/staff/reports?page=1&pageSize=50',
+          session.token,
+        );
+        const latest = response.data || [];
+        const previous = seenReportIdsRef.current;
+        if (previous) {
+          latest
+            .filter(report => !previous.has(report.id))
+            .forEach(report => {
+              void notifyNewReport(report.code, report.id).catch(() => undefined);
+              addNotification(
+                'New field report',
+                `${report.code} has been submitted and is ready to review.`,
+                report.id,
+              );
+            });
+        }
+        seenReportIdsRef.current = new Set(latest.map(report => report.id));
+        setReports(latest);
+        setReportTotal(response.meta?.total ?? latest.length);
+      } catch {
+        // Normal refresh handles visible errors; polling stays quiet.
+      }
+    };
+    const timer = setInterval(() => void pollReports(), 120_000);
+    return () => clearInterval(timer);
+  }, [addNotification, online, session?.token]);
 
   useEffect(() => {
     if (!session || !cacheReady) return;
@@ -575,6 +700,59 @@ export function useStaffAppController() {
     refreshData,
   });
 
+  baseOpenReportRef.current = openReport;
+  const openReportAndClearNotification = useCallback(
+    async (reportOrId: FieldReport | number) => {
+      const reportId = typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
+      const opened = await baseOpenReportRef.current(reportOrId);
+      if (!opened) return false;
+      await clearReportPhoneNotifications(reportId).catch(() => undefined);
+      setNotifications(current => {
+        const next = current.filter(item => item.reportId !== reportId);
+        if (session) void saveNotifications(session.user.id, next);
+        return next;
+      });
+      return true;
+    },
+    [session],
+  );
+
+  useEffect(() => {
+    if (!session || !cacheReady) return;
+    const openFromPhoneNotification = async (reportId: number) => {
+      if (handledNotificationReportsRef.current.has(reportId)) return false;
+      handledNotificationReportsRef.current.add(reportId);
+      const opened = await openReportAndClearNotification(reportId);
+      if (opened) {
+        await AsyncStorage.removeItem(pendingNotificationKey).catch(() => undefined);
+      } else {
+        handledNotificationReportsRef.current.delete(reportId);
+      }
+      if (opened) {
+        setTimeout(() => handledNotificationReportsRef.current.delete(reportId), 2000);
+      }
+      return opened;
+    };
+    const unsubscribe = listenForReportNotificationPress(reportId => {
+      void openFromPhoneNotification(reportId);
+    });
+    const readPendingOpen = async () => {
+      const value = await AsyncStorage.getItem(pendingNotificationKey).catch(() => null);
+      const reportId = Number(value);
+      if (Number.isInteger(reportId) && reportId > 0) {
+        await openFromPhoneNotification(reportId);
+      }
+    };
+    void readPendingOpen();
+    const appStateSubscription = AppState.addEventListener('change', state => {
+      if (state === 'active') void readPendingOpen();
+    });
+    return () => {
+      unsubscribe();
+      appStateSubscription.remove();
+    };
+  }, [cacheReady, openReportAndClearNotification, session?.user.id]);
+
   return {
     session,
     booting,
@@ -625,7 +803,7 @@ export function useStaffAppController() {
     refreshData,
     signOut,
     updateStaffProfilePhoto,
-    openReport,
+    openReport: openReportAndClearNotification,
     openFarmer,
     submitReview,
     loadMore,

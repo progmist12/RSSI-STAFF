@@ -86,11 +86,17 @@ export function LoadMoreButton({
   );
 }
 
-export function Choice({ label, selected, onPress, styles }: any) {
+export function Choice({ label, selected, onPress, styles, disabled }: any) {
   return (
     <Pressable
+      disabled={disabled}
+      accessibilityState={{ selected, disabled }}
       onPress={onPress}
-      style={[styles.choice, selected && styles.choiceSelected]}
+      style={[
+        styles.choice,
+        selected && styles.choiceSelected,
+        disabled && { opacity: 0.55 },
+      ]}
     >
       <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
         {label}

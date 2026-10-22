@@ -26,7 +26,7 @@ export function ReportsScreen({
   styles,
   colors,
 }: any) {
-  const statuses = ['All', 'For verification', 'Confirmed', 'No detection'];
+  const statuses = ['Needs review', 'Reviewed', 'Confirmed', 'All'];
   return (
     <View>
       <SectionIntro
@@ -46,7 +46,7 @@ export function ReportsScreen({
         {statuses.map(value => (
           <Choice
             key={value}
-            label={value === 'For verification' ? 'Pending' : value}
+            label={value}
             selected={listFilter === value}
             onPress={() => setListFilter(value)}
             styles={styles}

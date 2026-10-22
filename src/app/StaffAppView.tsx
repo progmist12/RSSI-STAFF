@@ -27,7 +27,9 @@ import { HelpModal, MAP_SEVERITY_LEGEND } from '../components/HelpModal';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import { MapScreen } from '../screens/MapScreen';
 import { VisitsScreen } from '../screens/VisitsScreen';
+import { VisitsCalendarModal } from '../components/VisitsCalendarModal';
 import type { StaffAppController, Tab } from './useStaffAppController';
+import { reportIsCompleteWithoutVisit } from './reportReview';
 
 const helpSections: Partial<
   Record<
@@ -130,6 +132,10 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [mapGestureActive, setMapGestureActive] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [visitCalendarOpen, setVisitCalendarOpen] = useState(false);
+  const reportReviewLocked = selectedReport
+    ? reportIsCompleteWithoutVisit(selectedReport)
+    : false;
   if (booting)
     return (
       <SafeAreaView style={[styles.safe, styles.center]}>
@@ -270,7 +276,17 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           </Pressable>
         )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.pageTitle}>{pageTitle}</Text>
+          <Text
+            style={[
+              styles.pageTitle,
+              selectedReport && { fontSize: 20, lineHeight: 24, flexShrink: 1 },
+            ]}
+            numberOfLines={selectedReport ? 1 : undefined}
+            adjustsFontSizeToFit={Boolean(selectedReport)}
+            minimumFontScale={0.65}
+          >
+            {pageTitle}
+          </Text>
           {tab !== 'settings' ? (
             <Text style={styles.pageSubtitle}>
               {selectedReport
@@ -283,7 +299,17 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             </Text>
           ) : null}
         </View>
-        {helpSection ? (
+        {selectedReport ? null : tab === 'visits' && !selectedFarmer ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open visit calendar"
+            accessibilityState={{ expanded: visitCalendarOpen }}
+            onPress={() => setVisitCalendarOpen(true)}
+            style={{ width: 38, height: 38, borderRadius: 12, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface }}
+          >
+            <AppIcon name="calendar" color={colors.blue} size={20} />
+          </Pressable>
+        ) : helpSection ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${helpSection.title} help`}
@@ -315,7 +341,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           connectionIndicator
         )}
       </View>
-      {!online && (
+      {!online && !selectedReport && (
         <View style={styles.offlineBanner}>
           <Text style={styles.offlineBannerText}>
             Offline mode · cached workspace available
@@ -378,7 +404,8 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             setReview={setReview}
             styles={styles}
             colors={colors}
-            canReview={canReview}
+            canReview={canReview && !reportReviewLocked}
+            reviewLocked={reportReviewLocked}
             busy={reviewBusy}
             photoFailed={photoFailed}
             setPhotoFailed={setPhotoFailed}
@@ -408,7 +435,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             }}
             onOpenPending={() => {
               setTab('reports');
-              setListFilter('For verification');
+              setListFilter('Needs review');
             }}
             onOpenFarmers={() => setTab('farmers')}
             onSelectReport={openReport}
@@ -546,6 +573,10 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         notifications={notifications}
         colors={colors}
         onClose={() => setNotificationOpen(false)}
+        onOpenReport={reportId => {
+          setNotificationOpen(false);
+          void openReport(reportId);
+        }}
       />
       <HelpModal
         visible={helpOpen && Boolean(helpSection)}
@@ -554,6 +585,16 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         legend={helpSection?.legend}
         colors={colors}
         onClose={() => setHelpOpen(false)}
+      />
+      <VisitsCalendarModal
+        visible={visitCalendarOpen}
+        visits={visits}
+        colors={colors}
+        onClose={() => setVisitCalendarOpen(false)}
+        onOpenReport={visit => {
+          setVisitCalendarOpen(false);
+          openReport(visit.report_id);
+        }}
       />
     </SafeAreaView>
   );

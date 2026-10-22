@@ -463,17 +463,6 @@ export function makeStyles(c: Palette) {
       justifyContent: 'center',
     },
     loadMoreText: { fontSize: 11, fontWeight: '800', color: c.blue },
-    privacyCallout: {
-      flexDirection: 'row',
-      gap: 9,
-      backgroundColor: c.blueSoft,
-      borderRadius: 13,
-      padding: 12,
-      marginTop: 14,
-      marginBottom: 8,
-    },
-    privacyGlyph: { fontSize: 17, color: c.blue, fontWeight: '700' },
-    privacyText: { flex: 1, fontSize: 10, lineHeight: 15, color: c.muted },
     detailHero: {
       padding: 17,
       backgroundColor: c.surface,

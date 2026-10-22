@@ -1,9 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Farmer, FieldReport, ReviewForm, StaffMapLocation, StaffVisit } from './types';
+import {
+  Farmer,
+  FieldReport,
+  ReviewForm,
+  StaffMapLocation,
+  StaffVisit,
+} from './types';
 
 export type PendingReview = {
   reportId: number;
   review: ReviewForm;
+  previousFollowUpAt?: string;
   updatedAt: string;
 };
 
@@ -13,6 +20,7 @@ export type AppNotification = {
   message: string;
   createdAt: string;
   read: boolean;
+  reportId?: number;
 };
 
 export type WorkspaceSnapshot = {

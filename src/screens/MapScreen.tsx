@@ -69,12 +69,14 @@ export function MapScreen({
   colors,
   onOpenReport,
   online,
+  onMapGestureChange,
 }: {
   locations: StaffMapLocation[];
   totalReports: number;
   colors: Palette;
   onOpenReport: (reportId: number) => void;
   online: boolean;
+  onMapGestureChange: (active: boolean) => void;
 }) {
   const [query, setQuery] = useState('');
   const [provinceIndex, setProvinceIndex] = useState(0);
@@ -205,6 +207,9 @@ export function MapScreen({
       </View>
 
       <View
+        onTouchStart={() => onMapGestureChange(true)}
+        onTouchEnd={() => onMapGestureChange(false)}
+        onTouchCancel={() => onMapGestureChange(false)}
         style={{
           height: 292,
           borderRadius: 14,
@@ -217,6 +222,13 @@ export function MapScreen({
         <Map
           style={{ flex: 1 }}
           mapStyle="https://tiles.openfreemap.org/styles/liberty"
+          androidView="texture"
+          dragPan
+          touchZoom
+          doubleTapZoom
+          doubleTapHoldZoom
+          touchRotate={false}
+          touchPitch={false}
           attribution
           attributionPosition={{ bottom: 8, right: 8 }}
           logo={false}
@@ -232,7 +244,7 @@ export function MapScreen({
             ref={camera}
             initialViewState={{ center: [122.9, 10.25], zoom: 8.2 }}
             minZoom={6}
-            maxZoom={18}
+            maxZoom={22}
           />
           {filteredLocations.map(location => {
             const latest = location.visibleReports[0];
@@ -317,7 +329,7 @@ export function MapScreen({
             text="+"
             colors={colors}
             onPress={() => {
-              const nextZoom = Math.min(18, zoom + 1);
+              const nextZoom = Math.min(22, zoom + 1);
               setZoom(nextZoom);
               camera.current?.zoomTo(nextZoom, { duration: 250 });
             }}

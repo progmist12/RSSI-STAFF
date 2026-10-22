@@ -95,13 +95,6 @@ export function Dashboard({
           styles={styles}
         />
       )}
-      <View style={styles.privacyCallout}>
-        <Text style={styles.privacyGlyph}>ⓘ</Text>
-        <Text style={styles.privacyText}>
-          Farmer damage levels are observations. Record SRA verification and
-          severity independently.
-        </Text>
-      </View>
     </View>
   );
 }

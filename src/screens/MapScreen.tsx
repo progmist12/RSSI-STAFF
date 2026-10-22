@@ -5,6 +5,7 @@ import {
   Map,
   Marker,
   type CameraRef,
+  type MapRef,
 } from '@maplibre/maplibre-react-native';
 import { StaffMapLocation, StaffMapReport } from '../types';
 import { Palette } from '../theme';
@@ -20,14 +21,8 @@ const provinceOptions = [
   'Negros Oriental',
 ];
 const statusOptions = ['All', 'For verification', 'Confirmed', 'No detection'];
-const severityLegend = [
-  { label: 'No report / not assessed', color: '#64748B' },
-  { label: 'Mild · 1–20%', color: '#2563EB' },
-  { label: 'Moderate · 21–50%', color: '#EAB308' },
-  { label: 'Severe · 51–70%', color: '#F97316' },
-  { label: 'Highly severe · 71–100%', color: '#DC2626' },
-];
-
+const DEFAULT_MAP_CENTER: [number, number] = [122.9, 10.25];
+const DEFAULT_MAP_ZOOM = 7.7;
 function normalizedSeverity(severity: string | null | undefined) {
   if (severity === 'Low') return 'Mild';
   return severity || 'Not assessed';
@@ -81,9 +76,18 @@ export function MapScreen({
   const [query, setQuery] = useState('');
   const [provinceIndex, setProvinceIndex] = useState(0);
   const [statusIndex, setStatusIndex] = useState(0);
+  const [openFilter, setOpenFilter] = useState<'province' | 'status' | null>(
+    null,
+  );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(8.2);
+  const [zoom, setZoom] = useState(DEFAULT_MAP_ZOOM);
   const camera = useRef<CameraRef>(null);
+  const map = useRef<MapRef>(null);
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  const [calloutPoint, setCalloutPoint] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [mapFailed, setMapFailed] = useState(false);
 
   const filteredLocations = useMemo(() => {
@@ -119,7 +123,9 @@ export function MapScreen({
           return null;
         return {
           ...location,
-          key: `${location.location_type}-${location.province}-${location.municipality || location.title}-${index}`,
+          key: `${location.location_type}-${location.province}-${
+            location.municipality || location.title
+          }-${index}`,
           visibleReports,
         };
       })
@@ -133,17 +139,60 @@ export function MapScreen({
       );
   }, [locations, provinceIndex, query, statusIndex]);
 
-  const selected =
-    filteredLocations.find(location => location.key === selectedKey) ||
-    filteredLocations[0];
   const visibleReportCount = filteredLocations.reduce(
     (total, location) => total + location.visibleReports.length,
     0,
   );
-  const cycleProvince = () =>
-    setProvinceIndex(index => (index + 1) % provinceOptions.length);
-  const cycleStatus = () =>
-    setStatusIndex(index => (index + 1) % statusOptions.length);
+  const selectedLocation = filteredLocations.find(
+    location => location.key === selectedKey,
+  );
+  const calloutWidth = 195;
+  const calloutHeight = 64;
+  const calloutLeft = calloutPoint
+    ? Math.max(
+        6,
+        Math.min(
+          calloutPoint.x - calloutWidth / 2,
+          mapSize.width - calloutWidth - 6,
+        ),
+      )
+    : 6;
+  const calloutTop = calloutPoint
+    ? calloutPoint.y >= calloutHeight + 12
+      ? calloutPoint.y - calloutHeight - 10
+      : calloutPoint.y + 12
+    : 6;
+  const updateCalloutPoint = (location: VisibleLocation & { key: string }) => {
+    void map.current
+      ?.project([location.longitude, location.latitude])
+      .then(([x, y]) => setCalloutPoint({ x, y }));
+  };
+  const focusLocation = (location: VisibleLocation & { key: string }) => {
+    setSelectedKey(location.key);
+    setCalloutPoint(null);
+    const nextZoom = Math.max(zoom, 10.5);
+    setZoom(nextZoom);
+    camera.current?.flyTo({
+      center: [location.longitude, location.latitude],
+      zoom: nextZoom,
+      duration: 500,
+    });
+    // Project after the camera animation too; the first region event can fire
+    // before React has rendered the newly selected location.
+    setTimeout(() => updateCalloutPoint(location), 600);
+  };
+  const chooseProvince = (index: number) => {
+    setProvinceIndex(index);
+    setOpenFilter(null);
+    setSelectedKey(null);
+    setCalloutPoint(null);
+  };
+  const chooseStatus = (index: number) => {
+    setStatusIndex(index);
+    setOpenFilter(null);
+    setSelectedKey(null);
+    setCalloutPoint(null);
+  };
 
   return (
     <View
@@ -183,18 +232,42 @@ export function MapScreen({
       />
 
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Pressable onPress={cycleProvince} style={filterStyle(colors)}>
-          <Text numberOfLines={1} style={filterText(colors)}>
-            {provinceOptions[provinceIndex]}
-          </Text>
-          <Text style={{ color: colors.muted }}>⌄</Text>
-        </Pressable>
-        <Pressable onPress={cycleStatus} style={filterStyle(colors)}>
-          <Text numberOfLines={1} style={filterText(colors)}>
-            Status: {statusOptions[statusIndex]}
-          </Text>
-          <Text style={{ color: colors.muted }}>⌄</Text>
-        </Pressable>
+        <View
+          style={{
+            flex: 1,
+            zIndex: openFilter === 'province' ? 30 : 10,
+          }}
+        >
+          <FilterDropdown
+            value={provinceOptions[provinceIndex]}
+            options={provinceOptions}
+            selectedIndex={provinceIndex}
+            expanded={openFilter === 'province'}
+            colors={colors}
+            onToggle={() =>
+              setOpenFilter(openFilter === 'province' ? null : 'province')
+            }
+            onSelect={chooseProvince}
+          />
+        </View>
+        <View
+          style={{
+            flex: 1,
+            zIndex: openFilter === 'status' ? 30 : 10,
+          }}
+        >
+          <FilterDropdown
+            value={`Status: ${statusOptions[statusIndex]}`}
+            options={statusOptions}
+            selectedIndex={statusIndex}
+            expanded={openFilter === 'status'}
+            colors={colors}
+            onToggle={() =>
+              setOpenFilter(openFilter === 'status' ? null : 'status')
+            }
+            onSelect={chooseStatus}
+          />
+        </View>
       </View>
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -207,6 +280,12 @@ export function MapScreen({
       </View>
 
       <View
+        onLayout={({ nativeEvent }) =>
+          setMapSize({
+            width: nativeEvent.layout.width,
+            height: nativeEvent.layout.height,
+          })
+        }
         onTouchStart={() => onMapGestureChange(true)}
         onTouchEnd={() => onMapGestureChange(false)}
         onTouchCancel={() => onMapGestureChange(false)}
@@ -220,6 +299,7 @@ export function MapScreen({
         }}
       >
         <Map
+          ref={map}
           style={{ flex: 1 }}
           mapStyle="https://tiles.openfreemap.org/styles/liberty"
           androidView="texture"
@@ -234,28 +314,32 @@ export function MapScreen({
           logo={false}
           compass
           compassPosition={{ top: 10, left: 10 }}
-          onRegionDidChange={(event: { nativeEvent: { zoom: number } }) =>
-            setZoom(event.nativeEvent.zoom)
-          }
+          onRegionDidChange={(event: { nativeEvent: { zoom: number } }) => {
+            setZoom(event.nativeEvent.zoom);
+            if (selectedLocation) updateCalloutPoint(selectedLocation);
+          }}
           onDidFinishLoadingMap={() => setMapFailed(false)}
           onDidFailLoadingMap={() => setMapFailed(true)}
         >
           <Camera
             ref={camera}
-            initialViewState={{ center: [122.9, 10.25], zoom: 8.2 }}
+            initialViewState={{
+              center: DEFAULT_MAP_CENTER,
+              zoom: DEFAULT_MAP_ZOOM,
+            }}
             minZoom={6}
             maxZoom={22}
           />
           {filteredLocations.map(location => {
             const latest = location.visibleReports[0];
             const color = severityColor(latest?.farmer_severity);
-            const isSelected = selected?.key === location.key;
+            const isSelected = selectedKey === location.key;
             return (
               <Marker
                 key={location.key}
                 id={location.key}
                 lngLat={[location.longitude, location.latitude]}
-                onPress={() => setSelectedKey(location.key)}
+                onPress={() => focusLocation(location)}
                 anchor="center"
               >
                 <View
@@ -274,9 +358,10 @@ export function MapScreen({
                 >
                   <Text
                     style={{
-                      color: latest?.farmer_severity === 'Moderate'
-                        ? '#1F2937'
-                        : '#FFFFFF',
+                      color:
+                        latest?.farmer_severity === 'Moderate'
+                          ? '#1F2937'
+                          : '#FFFFFF',
                       fontSize: 9,
                       fontWeight: '900',
                     }}
@@ -288,6 +373,65 @@ export function MapScreen({
             );
           })}
         </Map>
+        {selectedLocation && calloutPoint ? (
+          <View
+            style={{
+              position: 'absolute',
+              left: calloutLeft,
+              top: calloutTop,
+              width: calloutWidth,
+              padding: 10,
+              borderRadius: 11,
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.line,
+              elevation: 10,
+              zIndex: 20,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 6,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text
+                  numberOfLines={1}
+                  style={{ color: colors.ink, fontSize: 12, fontWeight: '800' }}
+                >
+                  {selectedLocation.title}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{ color: colors.muted, fontSize: 10, marginTop: 2 }}
+                >
+                  {selectedLocation.detail}
+                  {selectedLocation.location_type !== 'consented_farm'
+                    ? ' · approximate'
+                    : ''}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close marker details"
+                onPress={() => {
+                  setSelectedKey(null);
+                  setCalloutPoint(null);
+                }}
+                hitSlop={6}
+              >
+                <Text
+                  style={{ color: colors.muted, fontSize: 19, lineHeight: 20 }}
+                >
+                  ×
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
         {mapFailed ? (
           <View
             style={{
@@ -350,109 +494,58 @@ export function MapScreen({
             colors={colors}
             onPress={() => {
               camera.current?.flyTo({
-                center: [122.9, 10.25],
-                zoom: 8.2,
+                center: DEFAULT_MAP_CENTER,
+                zoom: DEFAULT_MAP_ZOOM,
                 duration: 500,
               });
-              setZoom(8.2);
+              setZoom(DEFAULT_MAP_ZOOM);
             }}
           />
         </View>
       </View>
-
-      <View
-        style={{
-          padding: 12,
-          borderRadius: 12,
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.line,
-        }}
-      >
-        <Text style={{ color: colors.ink, fontSize: 13, fontWeight: '800' }}>
-          Latest farmer-reported damage severity
-        </Text>
+      {selectedLocation ? (
         <View
           style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            gap: 12,
-            marginTop: 9,
+            padding: 14,
+            borderRadius: 14,
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.line,
+            gap: 10,
           }}
         >
-          {severityLegend.map(({ label, color }) => (
-            <View
-              key={label}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-            >
-              <View
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: 4,
-                  backgroundColor: color,
-                }}
-              />
-              <Text style={{ color: colors.muted, fontSize: 10 }}>{label}</Text>
-            </View>
-          ))}
-        </View>
-        <Text
-          style={{
-            color: colors.muted,
-            fontSize: 10,
-            lineHeight: 15,
-            marginTop: 8,
-          }}
-        >
-          Farm pins appear only when location consent and staff permissions
-          allow. Other reports are grouped at municipality centers. Tap a pin to
-          open any report there. Marker color reflects the newest visible
-          farmer-reported severity at that location. Basemap tiles need internet;
-          saved report locations remain available offline.
-        </Text>
-      </View>
-
-      <View
-        style={{
-          padding: 14,
-          borderRadius: 14,
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.line,
-        }}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ color: colors.ink, fontSize: 16, fontWeight: '800' }}>
-            Reports at this location
-          </Text>
-          <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '700' }}>
-            {selected?.visibleReports.length || 0}
-          </Text>
-        </View>
-        {selected ? (
-          <>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
             <Text
-              style={{
-                color: colors.ink,
-                fontSize: 16,
-                fontWeight: '800',
-                marginTop: 10,
-              }}
+              style={{ color: colors.ink, fontSize: 15, fontWeight: '800' }}
             >
-              {selected.title}
+              Reports at this location
             </Text>
-            <Text style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>
-              {selected.detail}
-              {selected.location_type !== 'consented_farm'
-                ? ' · approximate location'
-                : ''}
+            <Text
+              style={{ color: colors.blue, fontSize: 11, fontWeight: '700' }}
+            >
+              {selectedLocation.visibleReports.length}
             </Text>
-            {selected.visibleReports.map(report => (
+          </View>
+          <Text style={{ color: colors.ink, fontSize: 14, fontWeight: '800' }}>
+            {selectedLocation.title}
+          </Text>
+          <Text style={{ color: colors.muted, fontSize: 11, marginTop: -7 }}>
+            {selectedLocation.detail}
+            {selectedLocation.location_type !== 'consented_farm'
+              ? ' · approximate location'
+              : ''}
+          </Text>
+          {selectedLocation.visibleReports.length ? (
+            selectedLocation.visibleReports.map(report => (
               <View
                 key={report.id}
                 style={{
-                  marginTop: 10,
                   padding: 10,
                   borderRadius: 10,
                   borderWidth: 1,
@@ -468,7 +561,11 @@ export function MapScreen({
                   }}
                 >
                   <Text
-                    style={{ color: colors.ink, fontSize: 12, fontWeight: '800' }}
+                    style={{
+                      color: colors.ink,
+                      fontSize: 12,
+                      fontWeight: '800',
+                    }}
                   >
                     {report.code}
                   </Text>
@@ -478,7 +575,9 @@ export function MapScreen({
                     {report.verification_status}
                   </Text>
                 </View>
-                <Text style={{ color: colors.muted, fontSize: 11, marginTop: 4 }}>
+                <Text
+                  style={{ color: colors.muted, fontSize: 10, marginTop: 4 }}
+                >
                   Observed {formatDate(report.observed_at)}
                 </Text>
                 <Text
@@ -492,7 +591,10 @@ export function MapScreen({
                   Farmer severity: {normalizedSeverity(report.farmer_severity)}
                   {report.farmer_severity_range ||
                   severityRange(report.farmer_severity)
-                    ? ` · ${report.farmer_severity_range || severityRange(report.farmer_severity)} damage`
+                    ? ` · ${
+                        report.farmer_severity_range ||
+                        severityRange(report.farmer_severity)
+                      } damage`
                     : ''}
                 </Text>
                 <Pressable
@@ -507,30 +609,24 @@ export function MapScreen({
                   }}
                 >
                   <Text
-                    style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 11 }}
+                    style={{
+                      color: '#FFFFFF',
+                      fontWeight: '800',
+                      fontSize: 11,
+                    }}
                   >
                     Open {report.code}
                   </Text>
                 </Pressable>
               </View>
-            ))}
-            {selected.visibleReports.length === 0 ? (
-              <Text
-                style={{ color: colors.muted, fontSize: 11, marginTop: 10 }}
-              >
-                No farmer report has been submitted for this consented farm yet.
-                Its gray marker means no report is on record.
-              </Text>
-            ) : null}
-          </>
-        ) : (
-          <Text style={{ color: colors.muted, fontSize: 12, marginTop: 9 }}>
-            {totalReports
-              ? 'No reports match these filters. Choose another province or status.'
-              : 'No field reports have been submitted yet.'}
-          </Text>
-        )}
-      </View>
+            ))
+          ) : (
+            <Text style={{ color: colors.muted, fontSize: 11 }}>
+              No farmer report has been submitted for this location yet.
+            </Text>
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -553,6 +649,93 @@ function filterStyle(colors: Palette) {
 
 function filterText(colors: Palette) {
   return { color: colors.ink, fontSize: 11, flex: 1 };
+}
+
+function FilterDropdown({
+  value,
+  options,
+  selectedIndex,
+  expanded,
+  colors,
+  onToggle,
+  onSelect,
+}: {
+  value: string;
+  options: string[];
+  selectedIndex: number;
+  expanded: boolean;
+  colors: Palette;
+  onToggle: () => void;
+  onSelect: (index: number) => void;
+}) {
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={onToggle}
+        style={filterStyle(colors)}
+      >
+        <Text numberOfLines={1} style={filterText(colors)}>
+          {value}
+        </Text>
+        <Text style={{ color: colors.muted }}>{expanded ? '−' : '⌄'}</Text>
+      </Pressable>
+      {expanded ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: 48,
+            left: 0,
+            right: 0,
+            borderWidth: 1,
+            borderColor: colors.line,
+            borderRadius: 10,
+            backgroundColor: colors.surface,
+            elevation: 12,
+            zIndex: 30,
+          }}
+        >
+          {options.map((option, index) => {
+            const selected = index === selectedIndex;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => onSelect(index)}
+                style={{
+                  minHeight: 42,
+                  paddingHorizontal: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: selected ? colors.blueSoft : colors.surface,
+                  borderBottomWidth: index < options.length - 1 ? 1 : 0,
+                  borderBottomColor: colors.line,
+                }}
+              >
+                <Text
+                  style={{
+                    color: selected ? colors.blue : colors.ink,
+                    fontSize: 12,
+                    fontWeight: selected ? '700' : '500',
+                  }}
+                >
+                  {option}
+                </Text>
+                {selected ? (
+                  <Text style={{ color: colors.blue, fontWeight: '800' }}>
+                    ✓
+                  </Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </>
+  );
 }
 
 function MapControl({

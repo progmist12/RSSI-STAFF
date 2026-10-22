@@ -23,9 +23,45 @@ import { FarmerDetail } from '../screens/FarmersScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ReportsScreen, FarmersScreen } from '../screens/ReportsScreen';
 import { NotificationsPanel } from '../components/NotificationsPanel';
+import { HelpModal, MAP_SEVERITY_LEGEND } from '../components/HelpModal';
+import { AppIcon, type AppIconName } from '../components/AppIcon';
 import { MapScreen } from '../screens/MapScreen';
 import { VisitsScreen } from '../screens/VisitsScreen';
 import type { StaffAppController, Tab } from './useStaffAppController';
+
+const helpSections: Partial<
+  Record<
+    Tab,
+    { title: string; description: string; legend?: typeof MAP_SEVERITY_LEGEND }
+  >
+> = {
+  home: {
+    title: 'Farmer damage observations',
+    description:
+      'Farmer damage levels are observations. Record SRA verification and severity independently. Overview totals summarize reports and farmer records available in your assigned area.',
+  },
+  map: {
+    title: 'Latest farmer-reported damage severity',
+    description:
+      'Farm pins appear only when location consent and staff permissions allow. Other reports are grouped at municipality centers. Tap a pin to open its reports. Marker color reflects the newest visible farmer-reported severity. Basemap tiles need internet; saved report locations remain available offline.',
+    legend: MAP_SEVERITY_LEGEND,
+  },
+  reports: {
+    title: 'About field reports',
+    description:
+      'Review farmer observations in your province scope. Search or filter by verification status, then open a report to record the SRA assessment, rationale, reviewer note, and any follow-up date.',
+  },
+  visits: {
+    title: 'Visit history',
+    description:
+      'Each visit belongs to a farmer report. Record what staff checked and found during the visit. Farmer observations and SRA assessments remain separate. Scheduled visits can be updated, completed, or cancelled while online.',
+  },
+  farmers: {
+    title: 'Farmer directory',
+    description:
+      'Browse farmer accounts and registered farms available within your province access. Search by name, reference, or farm, then open a farmer to view their account and farm details. Private location details follow staff permissions and farmer consent.',
+  },
+};
 
 export function StaffAppView({ app }: { app: StaffAppController }) {
   const {
@@ -93,6 +129,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [mapGestureActive, setMapGestureActive] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   if (booting)
     return (
       <SafeAreaView style={[styles.safe, styles.center]}>
@@ -138,6 +175,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
       )[tab];
   const showHeaderActions =
     !selectedReport && !selectedFarmer && tab !== 'settings';
+  const helpSection = showHeaderActions ? helpSections[tab] : undefined;
   const headerActions = (
     <View style={styles.headerActions}>
       <Pressable
@@ -149,7 +187,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         }}
         style={styles.refreshButton}
       >
-        <Text style={styles.refreshGlyph}>🔔</Text>
+        <AppIcon name="notification" color={colors.blue} size={21} />
         {notifications.some(item => !item.read) ? (
           <View style={styles.tabBadge}>
             <Text style={styles.tabBadgeText}>
@@ -245,7 +283,37 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             </Text>
           ) : null}
         </View>
-        {connectionIndicator}
+        {helpSection ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${helpSection.title} help`}
+            accessibilityState={{ expanded: helpOpen }}
+            onPress={() => setHelpOpen(true)}
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 20,
+              borderWidth: 1.5,
+              borderColor: colors.ink,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={{
+                color: colors.ink,
+                fontSize: 20,
+                lineHeight: 23,
+                fontWeight: '800',
+                marginTop: -1,
+              }}
+            >
+              ?
+            </Text>
+          </Pressable>
+        ) : (
+          connectionIndicator
+        )}
       </View>
       {!online && (
         <View style={styles.offlineBanner}>
@@ -426,13 +494,13 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         >
           {(
             [
-              ['home', '⌂', 'Overview'],
-              ['map', '⌖', 'Map'],
-              ['reports', '▤', 'Reports'],
-              ['visits', '◷', 'Visits'],
-              ['farmers', '♧', 'Farmers'],
-            ] as [Tab, string, string][]
-          ).map(([key, glyph, label]) => (
+              ['home', 'overview', 'Overview'],
+              ['map', 'map', 'Map'],
+              ['reports', 'reports', 'Reports'],
+              ['visits', 'visits', 'Visits'],
+              ['farmers', 'farmers', 'Farmers'],
+            ] as [Tab, AppIconName, string][]
+          ).map(([key, icon, label]) => (
             <Pressable
               key={key}
               accessibilityRole="tab"
@@ -448,14 +516,11 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
               <View
                 style={[styles.tabIcon, tab === key && styles.tabIconSelected]}
               >
-                <Text
-                  style={[
-                    styles.tabGlyph,
-                    tab === key && styles.tabGlyphSelected,
-                  ]}
-                >
-                  {glyph}
-                </Text>
+                <AppIcon
+                  name={icon}
+                  color={tab === key ? colors.blue : colors.muted}
+                  size={21}
+                />
                 {key === 'reports' && pendingTotal > 0 ? (
                   <View style={styles.tabBadge}>
                     <Text style={styles.tabBadgeText}>
@@ -481,6 +546,14 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         notifications={notifications}
         colors={colors}
         onClose={() => setNotificationOpen(false)}
+      />
+      <HelpModal
+        visible={helpOpen && Boolean(helpSection)}
+        title={helpSection?.title || ''}
+        description={helpSection?.description || ''}
+        legend={helpSection?.legend}
+        colors={colors}
+        onClose={() => setHelpOpen(false)}
       />
     </SafeAreaView>
   );

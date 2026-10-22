@@ -176,13 +176,6 @@ export function VisitsScreen({
         styles={styles}
       />
 
-      <View style={{ marginBottom: 12, padding: 13, borderRadius: 12, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }}>
-        <Text style={{ color: colors.ink, fontSize: 13, fontWeight: '800' }}>Visit history</Text>
-        <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 5 }}>
-          Each visit belongs to a farmer report. Record what staff checked and found at that visit; farmer observations and SRA assessments remain separate.
-        </Text>
-      </View>
-
       {canManage ? (
         <Pressable onPress={() => setScheduleOpen(value => !value)} disabled={!online || visitBusy} style={{ marginBottom: 12, padding: 13, borderRadius: 10, alignItems: 'center', backgroundColor: colors.blue, opacity: online ? 1 : 0.55 }}>
           <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>{scheduleOpen ? 'Close scheduler' : '＋ Schedule follow-up visit'}</Text>

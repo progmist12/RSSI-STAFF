@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Image,
+  KeyboardAvoidingView,
   Pressable,
+  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -30,6 +33,24 @@ import { VisitsScreen } from '../screens/VisitsScreen';
 import { VisitsCalendarModal } from '../components/VisitsCalendarModal';
 import type { StaffAppController, Tab } from './useStaffAppController';
 import { reportIsCompleteWithoutVisit } from './reportReview';
+
+function HideTabBarWhileKeyboardOpen({ children }: { children: React.ReactNode }) {
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  React.useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () =>
+      setKeyboardVisible(true),
+    );
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () =>
+      setKeyboardVisible(false),
+    );
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  return keyboardVisible ? null : <>{children}</>;
+}
 
 const helpSections: Partial<
   Record<
@@ -261,6 +282,10 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         </View>
         {showHeaderActions ? headerActions : null}
       </View>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <View style={styles.pageHeader}>
         {(selectedReport || selectedFarmer || tab === 'settings') && (
           <Pressable
@@ -388,6 +413,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
         contentContainerStyle={styles.scrollContent}
         scrollEnabled={tab !== 'map' || !mapGestureActive}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -515,7 +541,10 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           />
         ) : null}
       </ScrollView>
-      {!selectedReport && !selectedFarmer && tab !== 'settings' && (
+      <HideTabBarWhileKeyboardOpen>
+      {!selectedReport &&
+        !selectedFarmer &&
+        tab !== 'settings' && (
         <View
           style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}
         >
@@ -568,6 +597,8 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           ))}
         </View>
       )}
+      </HideTabBarWhileKeyboardOpen>
+      </KeyboardAvoidingView>
       <NotificationsPanel
         visible={notificationOpen}
         notifications={notifications}

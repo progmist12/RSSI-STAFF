@@ -61,6 +61,8 @@ export type FieldReport = {
   assessment_rationale?: string | null;
   reviewer_note?: string | null;
   follow_up_at?: string | null;
+  /** Local-only marker for review edits queued offline; never synced to the API. */
+  review_pending?: boolean;
 };
 
 export type VisitCheckingResult =

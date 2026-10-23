@@ -217,6 +217,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     if (!session || !selectedReport || !review) return;
     const optimistic: FieldReport = {
       ...selectedReport,
+      review_pending: true,
       verification_status: review.verificationStatus,
       sra_severity:
         review.sraSeverity === 'Not assessed' ? null : review.sraSeverity,
@@ -374,7 +375,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     try {
       if (kind === 'reports') {
         const response = await apiRequest<ApiPage<FieldReport>>(
-          `/staff/reports?page=${nextPage}&pageSize=50`,
+          `/staff/reports?page=${nextPage}&pageSize=20`,
           session.token,
         );
         setReports(items => {
@@ -388,7 +389,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         setReportPage(response.meta?.page ?? nextPage);
       } else if (kind === 'visits') {
         const response = await apiRequest<ApiPage<StaffVisit>>(
-          `/staff/visits?page=${nextPage}&pageSize=50`,
+          `/staff/visits?page=${nextPage}&pageSize=20`,
           session.token,
         );
         setVisits(items => {
@@ -402,7 +403,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         setVisitPage(response.meta?.page ?? nextPage);
       } else {
         const response = await apiRequest<ApiPage<Farmer>>(
-          `/staff/farmers?page=${nextPage}&pageSize=50`,
+          `/staff/farmers?page=${nextPage}&pageSize=20`,
           session.token,
         );
         setFarmers(items => {
@@ -509,7 +510,9 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
             ? report.verification_status === 'Confirmed'
             : listFilter === 'Reviewed'
             ? reportHasReview(report) &&
-              report.verification_status !== 'Confirmed'
+              !['Confirmed', 'No detection'].includes(
+                report.verification_status,
+              )
             : listFilter === 'Needs review' || listFilter === 'For verification'
             ? !reportHasReview(report)
             : report.verification_status === listFilter);

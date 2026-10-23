@@ -231,7 +231,18 @@ export function ReportDetail({
               key={value}
               label={value}
               selected={review.verificationStatus === value}
-              onPress={() => update('verificationStatus', value)}
+              onPress={() => {
+                if (value === 'No detection') {
+                  setFollowUpDecision('complete');
+                  setReview((old: ReviewForm) => ({
+                    ...old,
+                    verificationStatus: value,
+                    followUpAt: '',
+                  }));
+                  return;
+                }
+                update('verificationStatus', value);
+              }}
               disabled={!canReview}
               styles={styles}
             />

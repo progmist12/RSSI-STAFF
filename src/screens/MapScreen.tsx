@@ -58,7 +58,7 @@ function severityRange(severity: string | null | undefined) {
   }
 }
 
-export function MapScreen({
+function MapScreenView({
   locations,
   totalReports,
   colors,
@@ -630,6 +630,8 @@ export function MapScreen({
     </View>
   );
 }
+
+export const MapScreen = React.memo(MapScreenView);
 
 function filterStyle(colors: Palette) {
   return {

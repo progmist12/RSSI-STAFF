@@ -1,10 +1,8 @@
 import { FieldReport, ReviewForm } from '../types';
 
 export function reportIsCompleteWithoutVisit(report: FieldReport) {
-  return (
-    ['Confirmed', 'No detection'].includes(report.verification_status) &&
-    !report.follow_up_at
-  );
+  if (report.verification_status === 'No detection') return true;
+  return report.verification_status === 'Confirmed' && !report.follow_up_at;
 }
 
 export function reviewFromReport(report: FieldReport): ReviewForm {

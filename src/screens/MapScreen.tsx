@@ -20,7 +20,7 @@ const provinceOptions = [
   'Negros Occidental',
   'Negros Oriental',
 ];
-const statusOptions = ['All', 'For verification', 'Confirmed', 'No detection'];
+const statusOptions = ['All', 'For verification'];
 const DEFAULT_MAP_CENTER: [number, number] = [122.9, 10.25];
 const DEFAULT_MAP_ZOOM = 7.7;
 function normalizedSeverity(severity: string | null | undefined) {
@@ -58,18 +58,21 @@ function severityRange(severity: string | null | undefined) {
   }
 }
 
-export function MapScreen({
+function MapScreenView({
   locations,
-  totalReports,
   colors,
   onOpenReport,
+  onViewFarmerHistory,
   online,
   onMapGestureChange,
 }: {
   locations: StaffMapLocation[];
-  totalReports: number;
   colors: Palette;
   onOpenReport: (reportId: number) => void;
+  onViewFarmerHistory: (
+    report: StaffMapReport,
+    location: StaffMapLocation,
+  ) => void;
   online: boolean;
   onMapGestureChange: (active: boolean) => void;
 }) {
@@ -107,8 +110,9 @@ export function MapScreen({
             .includes(needle);
         let visibleReports = location.reports.filter(
           report =>
-            statusIndex === 0 ||
-            report.verification_status === statusOptions[statusIndex],
+            report.verification_status === 'For verification' &&
+            (statusIndex === 0 ||
+              report.verification_status === statusOptions[statusIndex]),
         );
         const noReport = location.reports.length === 0;
         if (needle && !placeMatches) {
@@ -208,8 +212,8 @@ export function MapScreen({
           Negros coverage
         </Text>
         <Text style={{ color: colors.muted, fontSize: 12, marginTop: 5 }}>
-          All submitted reports appear at a consented farm pin or an approximate
-          municipality center.
+          Only reports awaiting verification appear on the map. Open a farm’s
+          history to review completed reports and visits.
         </Text>
       </View>
 
@@ -272,7 +276,7 @@ export function MapScreen({
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text style={{ color: colors.ink, fontSize: 12, fontWeight: '700' }}>
-          {visibleReportCount} of {totalReports} reports
+          {visibleReportCount} reports for verification
         </Text>
         <Text style={{ color: colors.muted, fontSize: 11 }}>
           {filteredLocations.length} map locations
@@ -541,6 +545,29 @@ export function MapScreen({
               ? ' · approximate location'
               : ''}
           </Text>
+          {selectedLocation.visibleReports[0] ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                onViewFarmerHistory(
+                  selectedLocation.visibleReports[0],
+                  selectedLocation,
+                )
+              }
+              style={{
+                paddingVertical: 10,
+                borderRadius: 9,
+                alignItems: 'center',
+                backgroundColor: colors.blueSoft,
+              }}
+            >
+              <Text
+                style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}
+              >
+                View farmer history
+              </Text>
+            </Pressable>
+          ) : null}
           {selectedLocation.visibleReports.length ? (
             selectedLocation.visibleReports.map(report => (
               <View
@@ -597,27 +624,28 @@ export function MapScreen({
                       } damage`
                     : ''}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => onOpenReport(report.id)}
-                  style={{
-                    marginTop: 8,
-                    backgroundColor: colors.blue,
-                    paddingVertical: 9,
-                    borderRadius: 8,
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text
+                <View style={{ marginTop: 8 }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => onOpenReport(report.id)}
                     style={{
-                      color: '#FFFFFF',
-                      fontWeight: '800',
-                      fontSize: 11,
+                      backgroundColor: colors.blue,
+                      paddingVertical: 9,
+                      borderRadius: 8,
+                      alignItems: 'center',
                     }}
                   >
-                    Open {report.code}
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        fontWeight: '800',
+                        fontSize: 11,
+                      }}
+                    >
+                      Open report
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             ))
           ) : (
@@ -630,6 +658,8 @@ export function MapScreen({
     </View>
   );
 }
+
+export const MapScreen = React.memo(MapScreenView);
 
 function filterStyle(colors: Palette) {
   return {

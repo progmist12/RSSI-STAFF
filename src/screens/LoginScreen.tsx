@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Keyboard,
   Platform,
@@ -108,10 +108,12 @@ export function LoginScreen({
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
           <View style={styles.loginBrand}>
-            <View style={styles.brandMarkLarge}>
-              <Text style={styles.brandMarkLargeText}>R</Text>
-              <View style={styles.brandLeafLarge} />
-            </View>
+            <Image
+              source={require('../assets/rssi-logo.png')}
+              resizeMode="contain"
+              style={{ width: 100, height: 100 }}
+              accessibilityLabel="RSSI logo"
+            />
             <Text style={styles.loginBrandName}>RSSI</Text>
             <Text style={styles.loginBrandSub}>
               SUGAR CANE FIELD MONITORING
@@ -231,18 +233,12 @@ export function LoginScreen({
               disabled={busy}
               styles={styles}
             />
-            {busy ? (
-              <ActivityIndicator
-                color={colors.blue}
-                style={{ marginTop: 14 }}
-              />
-            ) : null}
-            <View style={styles.loginSecurity}>
+            {/* <View style={styles.loginSecurity}>
               <Text style={styles.securityGlyph}>◈</Text>
               <Text style={styles.loginSecurityText}>
                 Your session is stored securely on this device.
               </Text>
-            </View>
+            </View> */}
           </View>
           <Text style={styles.loginFoot}>
             Sugarcane field observation · Negros Oriental & Negros Occidental

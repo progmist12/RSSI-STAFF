@@ -87,7 +87,11 @@ export function useStaffAppController() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
-  const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+  const refreshRef = useRef<(showSpinner?: boolean) => Promise<void>>(
+    async () => undefined,
+  );
+  const refreshInFlightRef = useRef(false);
+  const lastAutomaticRefreshAtRef = useRef(0);
   const seenReportIdsRef = useRef<Set<number> | null>(null);
   const selectedReportRef = useRef<FieldReport | null>(null);
   const reviewRef = useRef<ReviewForm | null>(null);
@@ -106,7 +110,14 @@ export function useStaffAppController() {
       readNotifications(active.user.id),
     ]);
     if (snapshot) {
-      setReports(snapshot.reports || []);
+      const pendingIds = new Set(queue.map(item => item.reportId));
+      setReports(
+        (snapshot.reports || []).map(report =>
+          pendingIds.has(report.id)
+            ? { ...report, review_pending: true }
+            : report,
+        ),
+      );
       setFarmers(snapshot.farmers || []);
       setMapLocations(snapshot.mapLocations || []);
       setMapReportTotal(
@@ -127,17 +138,19 @@ export function useStaffAppController() {
       setFarmerPage(snapshot.farmerPage || 1);
     }
     setPendingReviewCount(queue.length);
-    const reportNotifications = savedNotifications.filter(
-      item =>
-        item.title !== 'Connection restored' &&
-        item.title !== 'You are offline',
-    ).map(item => {
-      if (item.reportId) return item;
-      const report = snapshot?.reports?.find(candidate =>
-        item.message.includes(candidate.code),
-      );
-      return report ? { ...item, reportId: report.id } : item;
-    });
+    const reportNotifications = savedNotifications
+      .filter(
+        item =>
+          item.title !== 'Connection restored' &&
+          item.title !== 'You are offline',
+      )
+      .map(item => {
+        if (item.reportId) return item;
+        const report = snapshot?.reports?.find(candidate =>
+          item.message.includes(candidate.code),
+        );
+        return report ? { ...item, reportId: report.id } : item;
+      });
     setNotifications(reportNotifications);
     if (reportNotifications.length !== savedNotifications.length) {
       void saveNotifications(active.user.id, reportNotifications);
@@ -295,177 +308,227 @@ export function useStaffAppController() {
     }
   }, [addNotification, online, session, visits]);
 
-  const refreshData = useCallback(async () => {
-    if (!session?.token) return;
-    setRefreshing(true);
-    const failedRequests: string[] = [];
-    const describeFailure = (label: string, reason: unknown) => {
-      if (reason instanceof ApiError) {
-        return reason.status
-          ? `${label} (HTTP ${reason.status}): ${reason.message}`
-          : `${label}: ${reason.message}`;
-      }
-      return `${label}: ${
-        reason instanceof Error ? reason.message : 'request failed'
-      }`;
-    };
-    const token = session.token;
-    await flushPendingReviews();
-    const tasks = await Promise.allSettled([
-      apiRequest<ApiPage<FieldReport>>(
-        '/staff/reports?page=1&pageSize=50',
-        token,
-      ),
-      apiRequest<ApiPage<FieldReport>>(
-        '/staff/reports?status=For%20verification&page=1&pageSize=1',
-        token,
-      ),
-      apiRequest<ApiPage<Farmer>>('/staff/farmers?page=1&pageSize=50', token),
-      apiRequest<{
-        data: StaffMapLocation[];
-        meta: { total_reports: number; location_count: number };
-      }>('/staff/map-locations', token),
-      apiRequest<ApiPage<StaffVisit>>(
-        '/staff/visits?page=1&pageSize=50',
-        token,
-      ),
-    ]);
-    let unauthorized = false;
-    const reportResult = tasks[0];
-    if (reportResult.status === 'fulfilled') {
-      const freshReports = reportResult.value.data || [];
-      const currentIds = new Set(freshReports.map(item => item.id));
-      setNotifications(current => {
-        let changed = false;
-        const linked = current.map(item => {
-          if (item.reportId) return item;
-          const report = freshReports.find(candidate =>
-            item.message.includes(candidate.code),
-          );
-          if (!report) return item;
-          changed = true;
-          return { ...item, reportId: report.id };
-        });
-        if (changed && session) void saveNotifications(session.user.id, linked);
-        return linked;
-      });
-      const previouslySeen = seenReportIdsRef.current;
-      if (previouslySeen) {
-        freshReports
-          .filter(item => !previouslySeen.has(item.id))
-          .forEach(item => {
-            void notifyNewReport(item.code, item.id).catch(() => undefined);
-            addNotification(
-              'New field report',
-              `${item.code} has been submitted and is ready to review.`,
-              item.id,
-            );
-          });
-      }
-      seenReportIdsRef.current = currentIds;
-      setReports(freshReports);
-      setReportTotal(
-        reportResult.value.meta?.total ?? reportResult.value.data.length,
-      );
-      setReportPage(reportResult.value.meta?.page ?? 1);
-      if (selectedReport) {
-        const refreshed = reportResult.value.data.find(
-          item => item.id === selectedReport.id,
-        );
-        if (refreshed) setSelectedReport(refreshed);
-      }
-    } else {
-      failedRequests.push(describeFailure('Reports', reportResult.reason));
-      unauthorized ||=
-        reportResult.reason instanceof ApiError &&
-        reportResult.reason.status === 401;
-    }
-    const pendingResult = tasks[1];
-    if (pendingResult.status === 'fulfilled')
-      setPendingTotal(pendingResult.value.meta?.total ?? 0);
-    else {
-      failedRequests.push(
-        describeFailure('Pending report count', pendingResult.reason),
-      );
-      unauthorized ||=
-        pendingResult.reason instanceof ApiError &&
-        pendingResult.reason.status === 401;
-    }
-    const farmerResult = tasks[2];
-    if (farmerResult.status === 'fulfilled') {
-      setFarmers(farmerResult.value.data || []);
-      setFarmerTotal(
-        farmerResult.value.meta?.total ?? farmerResult.value.data.length,
-      );
-      setFarmerPage(farmerResult.value.meta?.page ?? 1);
-      if (selectedFarmer) {
-        const refreshed = farmerResult.value.data.find(
-          item => item.id === selectedFarmer.id,
-        );
-        if (refreshed) setSelectedFarmer(refreshed);
-      }
-    } else {
-      failedRequests.push(describeFailure('Farmers', farmerResult.reason));
-      unauthorized ||=
-        farmerResult.reason instanceof ApiError &&
-        farmerResult.reason.status === 401;
-    }
-    const mapResult = tasks[3];
-    if (mapResult.status === 'fulfilled') {
-      setMapLocations(mapResult.value.data || []);
-      setMapReportTotal(
-        mapResult.value.meta?.total_reports ??
-          (mapResult.value.data || []).reduce(
-            (total, location) => total + location.report_count,
-            0,
+  const refreshData = useCallback(
+    async (showSpinner = true) => {
+      if (!session?.token || refreshInFlightRef.current) return;
+      refreshInFlightRef.current = true;
+      if (showSpinner) setRefreshing(true);
+      try {
+        const failedRequests: string[] = [];
+        const describeFailure = (label: string, reason: unknown) => {
+          if (reason instanceof ApiError) {
+            return reason.status
+              ? `${label} (HTTP ${reason.status}): ${reason.message}`
+              : `${label}: ${reason.message}`;
+          }
+          return `${label}: ${
+            reason instanceof Error ? reason.message : 'request failed'
+          }`;
+        };
+        const token = session.token;
+        await flushPendingReviews();
+        const tasks = await Promise.allSettled([
+          apiRequest<ApiPage<FieldReport>>(
+            '/staff/reports?page=1&pageSize=50',
+            token,
           ),
-      );
-    } else {
-      failedRequests.push(describeFailure('Map locations', mapResult.reason));
-      unauthorized ||=
-        mapResult.reason instanceof ApiError && mapResult.reason.status === 401;
-    }
-    const visitResult = tasks[4];
-    if (visitResult.status === 'fulfilled') {
-      const latestVisits = visitResult.value.data || [];
-      setVisits(latestVisits);
-      setVisitTotal(
-        visitResult.value.meta?.total ?? visitResult.value.data.length,
-      );
-      setVisitPage(visitResult.value.meta?.page ?? 1);
-    } else {
-      failedRequests.push(describeFailure('Visits', visitResult.reason));
-      unauthorized ||=
-        visitResult.reason instanceof ApiError &&
-        visitResult.reason.status === 401;
-    }
-    if (unauthorized) {
-      showNotice('Your session expired. Please sign in again.', 'error');
-      await signOut(false);
-    } else if (failedRequests.length && online) {
-      const details = failedRequests.slice(0, 2).join(' · ');
-      const remaining = failedRequests.length - 2;
-      showNotice(
-        `Refresh failed: ${details}${
-          remaining > 0 ? ` · and ${remaining} more request(s)` : ''
-        }`,
-        'error',
-      );
-    } else if (!failedRequests.length) {
-      setNotice('');
-    }
-    setRefreshing(false);
-  }, [
-    flushPendingReviews,
-    online,
-    addNotification,
-    selectedFarmer,
-    selectedReport,
-    session,
-    showNotice,
-    signOut,
-  ]);
+          apiRequest<ApiPage<FieldReport>>(
+            '/staff/reports?status=For%20verification&page=1&pageSize=1',
+            token,
+          ),
+          apiRequest<ApiPage<Farmer>>(
+            '/staff/farmers?page=1&pageSize=50',
+            token,
+          ),
+          apiRequest<{
+            data: StaffMapLocation[];
+            meta: { total_reports: number; location_count: number };
+          }>('/staff/map-locations', token),
+          apiRequest<ApiPage<StaffVisit>>(
+            '/staff/visits?page=1&pageSize=50',
+            token,
+          ),
+        ]);
+        let unauthorized = false;
+        const reportResult = tasks[0];
+        if (reportResult.status === 'fulfilled') {
+          const freshReports = reportResult.value.data || [];
+          const currentIds = new Set(freshReports.map(item => item.id));
+          setNotifications(current => {
+            let changed = false;
+            const linked = current.map(item => {
+              if (item.reportId) return item;
+              const report = freshReports.find(candidate =>
+                item.message.includes(candidate.code),
+              );
+              if (!report) return item;
+              changed = true;
+              return { ...item, reportId: report.id };
+            });
+            if (changed && session)
+              void saveNotifications(session.user.id, linked);
+            return linked;
+          });
+          const previouslySeen = seenReportIdsRef.current;
+          if (previouslySeen) {
+            freshReports
+              .filter(item => !previouslySeen.has(item.id))
+              .forEach(item => {
+                void notifyNewReport(item.code, item.id).catch(() => undefined);
+                addNotification(
+                  'New field report',
+                  `${item.code} has been submitted and is ready to review.`,
+                  item.id,
+                );
+              });
+          }
+          seenReportIdsRef.current = currentIds;
+          setReports(freshReports);
+          setReportTotal(
+            reportResult.value.meta?.total ?? reportResult.value.data.length,
+          );
+          setReportPage(reportResult.value.meta?.page ?? 1);
+          const activeReport = selectedReportRef.current;
+          let refreshedReport = activeReport
+            ? freshReports.find(item => item.id === activeReport.id)
+            : undefined;
+          if (activeReport && !refreshedReport) {
+            try {
+              refreshedReport = (
+                await apiRequest<{ data: FieldReport }>(
+                  `/staff/reports/${activeReport.id}`,
+                  token,
+                )
+              ).data;
+            } catch {
+              // Keep the list refresh usable if the selected detail is unavailable.
+            }
+          }
+          if (activeReport && refreshedReport) {
+            const currentReview = reviewRef.current;
+            const previousReview = reviewFromReport(activeReport);
+            const reviewIsUnedited =
+              currentReview !== null &&
+              currentReview.verificationStatus ===
+                previousReview.verificationStatus &&
+              currentReview.sraSeverity === previousReview.sraSeverity &&
+              currentReview.assessmentRationale ===
+                previousReview.assessmentRationale &&
+              currentReview.reviewerNote === previousReview.reviewerNote &&
+              currentReview.followUpAt === previousReview.followUpAt;
+            if (reviewIsUnedited) setReview(reviewFromReport(refreshedReport));
+            setSelectedReport(refreshedReport);
+          }
+        } else {
+          failedRequests.push(describeFailure('Reports', reportResult.reason));
+          unauthorized ||=
+            reportResult.reason instanceof ApiError &&
+            reportResult.reason.status === 401;
+        }
+        const pendingResult = tasks[1];
+        if (pendingResult.status === 'fulfilled')
+          setPendingTotal(pendingResult.value.meta?.total ?? 0);
+        else {
+          failedRequests.push(
+            describeFailure('Pending report count', pendingResult.reason),
+          );
+          unauthorized ||=
+            pendingResult.reason instanceof ApiError &&
+            pendingResult.reason.status === 401;
+        }
+        const farmerResult = tasks[2];
+        if (farmerResult.status === 'fulfilled') {
+          setFarmers(farmerResult.value.data || []);
+          setFarmerTotal(
+            farmerResult.value.meta?.total ?? farmerResult.value.data.length,
+          );
+          setFarmerPage(farmerResult.value.meta?.page ?? 1);
+          if (selectedFarmer) {
+            const refreshed = farmerResult.value.data.find(
+              item => item.id === selectedFarmer.id,
+            );
+            if (refreshed) setSelectedFarmer(refreshed);
+          }
+        } else {
+          failedRequests.push(describeFailure('Farmers', farmerResult.reason));
+          unauthorized ||=
+            farmerResult.reason instanceof ApiError &&
+            farmerResult.reason.status === 401;
+        }
+        const mapResult = tasks[3];
+        if (mapResult.status === 'fulfilled') {
+          setMapLocations(mapResult.value.data || []);
+          setMapReportTotal(
+            mapResult.value.meta?.total_reports ??
+              (mapResult.value.data || []).reduce(
+                (total, location) => total + location.report_count,
+                0,
+              ),
+          );
+        } else {
+          failedRequests.push(
+            describeFailure('Map locations', mapResult.reason),
+          );
+          unauthorized ||=
+            mapResult.reason instanceof ApiError &&
+            mapResult.reason.status === 401;
+        }
+        const visitResult = tasks[4];
+        if (visitResult.status === 'fulfilled') {
+          const latestVisits = visitResult.value.data || [];
+          setVisits(latestVisits);
+          setVisitTotal(
+            visitResult.value.meta?.total ?? visitResult.value.data.length,
+          );
+          setVisitPage(visitResult.value.meta?.page ?? 1);
+        } else {
+          failedRequests.push(describeFailure('Visits', visitResult.reason));
+          unauthorized ||=
+            visitResult.reason instanceof ApiError &&
+            visitResult.reason.status === 401;
+        }
+        if (unauthorized) {
+          showNotice('Your session expired. Please sign in again.', 'error');
+          await signOut(false);
+        } else if (failedRequests.length && online) {
+          const details = failedRequests.slice(0, 2).join(' · ');
+          const remaining = failedRequests.length - 2;
+          showNotice(
+            `Refresh failed: ${details}${
+              remaining > 0 ? ` · and ${remaining} more request(s)` : ''
+            }`,
+            'error',
+          );
+        } else if (!failedRequests.length) {
+          setNotice('');
+        }
+      } finally {
+        refreshInFlightRef.current = false;
+        if (showSpinner) setRefreshing(false);
+      }
+    },
+    [
+      flushPendingReviews,
+      online,
+      addNotification,
+      selectedFarmer,
+      selectedReport,
+      session,
+      showNotice,
+      signOut,
+    ],
+  );
   refreshRef.current = refreshData;
+
+  const requestAutomaticRefresh = useCallback(() => {
+    if (!session?.token) return;
+    const now = Date.now();
+    // Network and foreground events often arrive together. Avoid repeating the
+    // same full workspace refresh when the data was just fetched.
+    if (now - lastAutomaticRefreshAtRef.current < 15_000) return;
+    lastAutomaticRefreshAtRef.current = now;
+    void refreshRef.current(false);
+  }, [session?.token]);
 
   useEffect(() => {
     let alive = true;
@@ -478,6 +541,10 @@ export function useStaffAppController() {
       }
       setSession(stored);
       await hydrateLocalData(stored);
+      if (!alive) return;
+      // Show the cached workspace immediately; validate the saved session
+      // without holding the initial screen behind a network round trip.
+      setBooting(false);
       try {
         const me = await apiRequest<{
           account_type: string;
@@ -500,8 +567,6 @@ export function useStaffAppController() {
             setAuthError(error.message);
           }
         }
-      } finally {
-        if (alive) setBooting(false);
       }
     })();
     return () => {
@@ -515,20 +580,20 @@ export function useStaffAppController() {
         state.isConnected && state.isInternetReachable !== false,
       );
       setOnline(connected);
-      if (connected) void refreshRef.current();
+      if (connected) requestAutomaticRefresh();
     });
     const appState = AppState.addEventListener('change', state => {
-      if (state === 'active') void refreshRef.current();
+      if (state === 'active') requestAutomaticRefresh();
     });
     return () => {
       unsubscribe();
       appState.remove();
     };
-  }, []);
+  }, [requestAutomaticRefresh]);
 
   useEffect(() => {
-    if (session?.token && online) void refreshRef.current();
-  }, [session?.token, online]);
+    if (session?.token && online) requestAutomaticRefresh();
+  }, [session?.token, online, requestAutomaticRefresh]);
 
   useEffect(() => {
     if (!session || !cacheReady) return;
@@ -547,7 +612,13 @@ export function useStaffAppController() {
     }
     let pollInFlight = false;
     const pollReports = async () => {
-      if (!online || AppState.currentState !== 'active' || pollInFlight) return;
+      if (
+        !online ||
+        refreshInFlightRef.current ||
+        AppState.currentState !== 'active' ||
+        pollInFlight
+      )
+        return;
       pollInFlight = true;
       try {
         const [
@@ -593,7 +664,9 @@ export function useStaffAppController() {
           latest
             .filter(report => !previous.has(report.id))
             .forEach(report => {
-              void notifyNewReport(report.code, report.id).catch(() => undefined);
+              void notifyNewReport(report.code, report.id).catch(
+                () => undefined,
+              );
               addNotification(
                 'New field report',
                 `${report.code} has been submitted and is ready to review.`,
@@ -768,7 +841,8 @@ export function useStaffAppController() {
   baseOpenReportRef.current = openReport;
   const openReportAndClearNotification = useCallback(
     async (reportOrId: FieldReport | number) => {
-      const reportId = typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
+      const reportId =
+        typeof reportOrId === 'number' ? reportOrId : reportOrId.id;
       const opened = await baseOpenReportRef.current(reportOrId);
       if (!opened) return false;
       await clearReportPhoneNotifications(reportId).catch(() => undefined);
@@ -789,12 +863,17 @@ export function useStaffAppController() {
       handledNotificationReportsRef.current.add(reportId);
       const opened = await openReportAndClearNotification(reportId);
       if (opened) {
-        await AsyncStorage.removeItem(pendingNotificationKey).catch(() => undefined);
+        await AsyncStorage.removeItem(pendingNotificationKey).catch(
+          () => undefined,
+        );
       } else {
         handledNotificationReportsRef.current.delete(reportId);
       }
       if (opened) {
-        setTimeout(() => handledNotificationReportsRef.current.delete(reportId), 2000);
+        setTimeout(
+          () => handledNotificationReportsRef.current.delete(reportId),
+          2000,
+        );
       }
       return opened;
     };
@@ -802,7 +881,9 @@ export function useStaffAppController() {
       void openFromPhoneNotification(reportId);
     });
     const readPendingOpen = async () => {
-      const value = await AsyncStorage.getItem(pendingNotificationKey).catch(() => null);
+      const value = await AsyncStorage.getItem(pendingNotificationKey).catch(
+        () => null,
+      );
       const reportId = Number(value);
       if (Number.isInteger(reportId) && reportId > 0) {
         await openFromPhoneNotification(reportId);

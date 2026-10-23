@@ -37,10 +37,11 @@ import { NotificationsPanel } from '../components/NotificationsPanel';
 import { HelpModal, MAP_SEVERITY_LEGEND } from '../components/HelpModal';
 import { AppIcon, type AppIconName } from '../components/AppIcon';
 import { MapScreen } from '../screens/MapScreen';
-import { VisitsScreen } from '../screens/VisitsScreen';
+import { VisitsScreen, type FarmHistoryRequest } from '../screens/VisitsScreen';
 import { VisitsCalendarModal } from '../components/VisitsCalendarModal';
 import type { StaffAppController, Tab } from './useStaffAppController';
 import { reportIsCompleteWithoutVisit } from './reportReview';
+import type { StaffMapLocation, StaffMapReport } from '../types';
 
 function HideTabBarWhileKeyboardOpen({
   children,
@@ -114,7 +115,6 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     reports,
     farmers,
     mapLocations,
-    mapReportTotal,
     pendingTotal,
     reportTotal,
     farmerTotal,
@@ -182,14 +182,11 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     },
     [tab],
   );
-  const openMapReport = useCallback(
-    (reportId: number) => {
-      void openReportFromCurrentTab(reportId);
-    },
-    [openReportFromCurrentTab],
-  );
   const [helpOpen, setHelpOpen] = useState(false);
   const [visitCalendarOpen, setVisitCalendarOpen] = useState(false);
+  const [farmHistoryRequest, setFarmHistoryRequest] =
+    useState<FarmHistoryRequest | null>(null);
+  const farmHistoryRequestIdRef = useRef(0);
   const reportReviewLocked = selectedReport
     ? reportIsCompleteWithoutVisit(selectedReport)
     : false;
@@ -202,6 +199,28 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     },
     [setTab, tab],
   );
+  const openMapFarmHistory = useCallback(
+    (mapReport: StaffMapReport, location: StaffMapLocation) => {
+      const report = reports.find(item => item.id === mapReport.id);
+      farmHistoryRequestIdRef.current += 1;
+      setFarmHistoryRequest({
+        requestId: farmHistoryRequestIdRef.current,
+        reportId: mapReport.id,
+        propertyId: report?.property_id ?? mapReport.property_id,
+        farmerName: report?.farmer?.name ?? mapReport.farmer_name,
+        propertyName: report?.property_name ?? mapReport.property_name,
+        municipality: report?.municipality ?? location.municipality,
+        province: report?.province ?? location.province,
+      });
+      navigateToTab('visits');
+    },
+    [navigateToTab, reports],
+  );
+  const markFarmHistoryRequestHandled = useCallback((requestId: number) => {
+    setFarmHistoryRequest(current =>
+      current?.requestId === requestId ? null : current,
+    );
+  }, []);
   const goBackToPreviousTab = useCallback(() => {
     const previousTab = tabHistoryRef.current.pop() || 'home';
     setSelectedReport(null);
@@ -639,10 +658,10 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             >
               <MapScreen
                 locations={mapLocations}
-                totalReports={mapReportTotal}
                 colors={colors}
                 online={online}
-                onOpenReport={openMapReport}
+                onOpenReport={openReportFromCurrentTab}
+                onViewFarmerHistory={openMapFarmHistory}
                 onMapGestureChange={setMapGestureActive}
               />
             </View>
@@ -668,6 +687,8 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
                 onUpdateVisit={updateVisit}
                 onOpenReport={openReportFromCurrentTab}
                 onHistoryBackHandlerChange={registerFarmHistoryBackHandler}
+                historyRequest={farmHistoryRequest}
+                onHistoryRequestHandled={markFarmHistoryRequestHandled}
                 styles={styles}
                 colors={colors}
               />

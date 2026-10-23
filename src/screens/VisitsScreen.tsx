@@ -27,6 +27,7 @@ type VisitPayload = {
 
 type FarmHistoryGroup = {
   key: string;
+  propertyId?: number | null;
   farmerName: string;
   propertyName: string;
   municipality: string;
@@ -35,6 +36,18 @@ type FarmHistoryGroup = {
   reports: FieldReport[];
   latestReport: FieldReport | null;
 };
+
+export type FarmHistoryRequest = {
+  requestId: number;
+  reportId: number;
+  propertyId?: number | null;
+  farmerName?: string | null;
+  propertyName: string;
+  municipality: string | null;
+  province: string;
+};
+
+type FarmHistoryTarget = FarmHistoryRequest & { key: string };
 
 function placeLabelKey(
   farmer: string | null | undefined,
@@ -116,6 +129,8 @@ export function VisitsScreen({
   onUpdateVisit,
   onOpenReport,
   onHistoryBackHandlerChange,
+  historyRequest,
+  onHistoryRequestHandled,
   styles,
   colors,
 }: {
@@ -139,12 +154,17 @@ export function VisitsScreen({
   ) => Promise<StaffVisit | null>;
   onOpenReport: (report: FieldReport | number) => void;
   onHistoryBackHandlerChange: (handler: (() => boolean) | null) => void;
+  historyRequest: FarmHistoryRequest | null;
+  onHistoryRequestHandled: (requestId: number) => void;
   styles: any;
   colors: Palette;
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<VisitFilter>('Scheduled');
   const [historyLocationKey, setHistoryLocationKey] = useState<string | null>(
+    null,
+  );
+  const [historyTarget, setHistoryTarget] = useState<FarmHistoryTarget | null>(
     null,
   );
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -160,6 +180,7 @@ export function VisitsScreen({
     onHistoryBackHandlerChange(() => {
       if (filter !== 'Completed' || !historyLocationKey) return false;
       setHistoryLocationKey(null);
+      setHistoryTarget(null);
       return true;
     });
     return () => onHistoryBackHandlerChange(null);
@@ -173,6 +194,7 @@ export function VisitsScreen({
       if (existing) return existing;
       const created: FarmHistoryGroup = {
         key,
+        propertyId: values.propertyId,
         farmerName: values.farmerName || 'Farmer',
         propertyName: values.propertyName || 'Farm',
         municipality: values.municipality || '',
@@ -218,6 +240,7 @@ export function VisitsScreen({
       );
       if (key === '|||') return;
       const group = getGroup(key, {
+        propertyId: report?.property_id ?? visit.property_id,
         farmerName: visit.farmer_name || report?.farmer?.name,
         propertyName: visit.property_name || report?.property_name,
         municipality: visit.municipality || report?.municipality,
@@ -245,6 +268,7 @@ export function VisitsScreen({
         );
         if (key === '|||') return;
         const group = getGroup(key, {
+          propertyId: report.property_id,
           farmerName: report.farmer?.name,
           propertyName: report.property_name,
           municipality: report.municipality,
@@ -253,12 +277,70 @@ export function VisitsScreen({
         addCompletedReport(group, report);
       });
 
+    if (historyTarget && !groups.has(historyTarget.key)) {
+      groups.set(historyTarget.key, {
+        key: historyTarget.key,
+        propertyId: historyTarget.propertyId,
+        farmerName: historyTarget.farmerName || 'Farmer',
+        propertyName: historyTarget.propertyName || 'Farm',
+        municipality: historyTarget.municipality || '',
+        province: historyTarget.province || '',
+        visits: [],
+        reports: [],
+        latestReport: null,
+      });
+    }
+
     return [...groups.values()].sort((a, b) =>
       `${a.farmerName} ${a.propertyName}`.localeCompare(
         `${b.farmerName} ${b.propertyName}`,
       ),
     );
-  }, [reports, visits]);
+  }, [historyTarget, reports, visits]);
+
+  useEffect(() => {
+    if (
+      !historyRequest ||
+      historyTarget?.requestId === historyRequest.requestId
+    )
+      return;
+    const labelKey = placeLabelKey(
+      historyRequest.farmerName,
+      historyRequest.propertyName,
+      historyRequest.municipality,
+      historyRequest.province,
+    );
+    const existing = farmHistoryGroups.find(group =>
+      historyRequest.propertyId != null && group.propertyId != null
+        ? group.propertyId === historyRequest.propertyId
+        : group.key === labelKey ||
+          (group.propertyName.trim().toLocaleLowerCase() ===
+            historyRequest.propertyName.trim().toLocaleLowerCase() &&
+            group.municipality.trim().toLocaleLowerCase() ===
+              (historyRequest.municipality || '').trim().toLocaleLowerCase() &&
+            group.province.trim().toLocaleLowerCase() ===
+              historyRequest.province.trim().toLocaleLowerCase()),
+    );
+    const key =
+      existing?.key ||
+      farmKey(
+        historyRequest.propertyId,
+        historyRequest.farmerName,
+        historyRequest.propertyName,
+        historyRequest.municipality,
+        historyRequest.province,
+      );
+    setHistoryTarget({ ...historyRequest, key });
+    setFilter('Completed');
+    setQuery('');
+    setHistoryLocationKey(key);
+    onHistoryRequestHandled(historyRequest.requestId);
+  }, [
+    farmHistoryGroups,
+    historyRequest,
+    historyTarget?.requestId,
+    onHistoryRequestHandled,
+  ]);
   const visibleVisits = useMemo(
     () =>
       visits.filter(visit => {
@@ -584,6 +666,7 @@ export function VisitsScreen({
               onPress={() => {
                 setFilter(value);
                 setHistoryLocationKey(null);
+                setHistoryTarget(null);
               }}
               styles={styles}
             />
@@ -592,7 +675,10 @@ export function VisitsScreen({
       </View>
       {filter === 'Completed' && historyLocationKey ? (
         <Pressable
-          onPress={() => setHistoryLocationKey(null)}
+          onPress={() => {
+            setHistoryLocationKey(null);
+            setHistoryTarget(null);
+          }}
           style={{
             marginBottom: 10,
             padding: 10,
@@ -1171,6 +1257,11 @@ export function VisitsScreen({
                 Open report
               </Text>
             </Pressable>
+          ) : visibleFarmHistory[0].visits.length === 0 ? (
+            <Text style={{ color: colors.muted, fontSize: 11, marginTop: 10 }}>
+              No completed reports or visits have been recorded for this farm
+              yet.
+            </Text>
           ) : null}
         </View>
       ) : null}

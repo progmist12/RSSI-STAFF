@@ -104,6 +104,8 @@ export type StaffVisit = {
 
 export type StaffMapReport = {
   id: number;
+  property_id?: number | null;
+  farmer_name?: string | null;
   code: string;
   property_name: string;
   farmer_severity: string;

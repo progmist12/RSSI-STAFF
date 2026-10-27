@@ -39,7 +39,7 @@ function severityColor(severity: string | null | undefined) {
     case 'Highly severe':
       return '#DC2626';
     default:
-      return '#64748B';
+      return '#16A34A';
   }
 }
 

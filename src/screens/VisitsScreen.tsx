@@ -8,6 +8,7 @@ import {
   SectionIntro,
 } from '../components/ui';
 import { DatePickerField } from '../components/DatePickerField';
+import { NumericStepperInput } from '../components/NumericStepperInput';
 import {
   FieldReport,
   CropCharacteristics,
@@ -1006,7 +1007,7 @@ export function VisitsScreen({
                           >
                             {field.label} ({field.unit})
                           </Text>
-                          <TextInput
+                          <NumericStepperInput
                             value={
                               cropCharacteristics[field.key] == null
                                 ? ''
@@ -1018,9 +1019,15 @@ export function VisitsScreen({
                                 [field.key]: cropValue(value),
                               }))
                             }
-                            keyboardType="decimal-pad"
+                            accessibilityLabel={field.label}
+                            step={field.unit === 'count' ? 1 : 0.1}
+                            integer={field.unit === 'count'}
+                            keyboardType={field.unit === 'count' ? 'number-pad' : 'decimal-pad'}
                             placeholder="Optional"
                             placeholderTextColor={colors.muted}
+                            textColor={colors.muted}
+                            borderColor={colors.line}
+                            backgroundColor={colors.surfaceAlt}
                             style={{
                               borderWidth: 1,
                               borderColor: colors.line,

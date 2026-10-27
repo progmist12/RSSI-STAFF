@@ -5,7 +5,7 @@ import { Palette } from '../theme';
 export type HelpLegendItem = { label: string; color: string };
 
 export const MAP_SEVERITY_LEGEND: HelpLegendItem[] = [
-  { label: 'No report / not assessed', color: '#64748B' },
+  { label: 'Healthy · no report / not assessed', color: '#16A34A' },
   { label: 'Mild · 1–20%', color: '#2563EB' },
   { label: 'Moderate · 21–50%', color: '#EAB308' },
   { label: 'Severe · 51–70%', color: '#F97316' },

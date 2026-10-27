@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { photoUrl } from '../api';
 import { DatePickerField } from '../components/DatePickerField';
+import { NumericStepperInput } from '../components/NumericStepperInput';
 import { Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
 import {
   Choice,
@@ -367,12 +368,18 @@ export function ReportDetail({
         ] as const).map(([label, key, keyboardType]) => (
           <View key={key}>
             <Text style={styles.fieldLabel}>{label}</Text>
-            <TextInput
+            <NumericStepperInput
               editable={canReview}
               value={review[key] || ''}
               onChangeText={value => update(key, keyboardType === 'number-pad' ? value.replace(/\D/g, '') : decimalEntry(value))}
               placeholder="Not assessed"
               placeholderTextColor={colors.muted}
+              accessibilityLabel={label}
+              step={keyboardType === 'number-pad' ? 1 : 0.1}
+              integer={keyboardType === 'number-pad'}
+              textColor={colors.muted}
+              borderColor={colors.line}
+              backgroundColor={colors.surfaceAlt}
               style={styles.input}
               keyboardType={keyboardType}
             />

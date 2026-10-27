@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { photoUrl } from '../api';
 import { DatePickerField } from '../components/DatePickerField';
@@ -27,7 +27,10 @@ function decimalEntry(value: string) {
   const dot = clean.indexOf('.');
   return dot < 0
     ? clean
-    : `${clean.slice(0, dot)}.${clean.slice(dot + 1).replace(/\./g, '').slice(0, 2)}`;
+    : `${clean.slice(0, dot)}.${clean
+        .slice(dot + 1)
+        .replace(/\./g, '')
+        .slice(0, 2)}`;
 }
 export function ReportDetail({
   report,
@@ -43,7 +46,10 @@ export function ReportDetail({
   setPhotoFailed,
   token,
   onSave,
+  scrollRef,
 }: any) {
+  const verificationStatusRef = useRef<any>(null);
+  const [showCompletionWarning, setShowCompletionWarning] = useState(false);
   const cropVisit = [...visits]
     .filter((visit: any) => visit.crop_characteristics)
     .sort((a: any, b: any) =>
@@ -77,15 +83,23 @@ export function ReportDetail({
       ['Leaf width', review.leafWidthCm, false],
       ['Tillers', review.tillerCount, true],
     ] as const;
-    const invalidCropMeasurement = cropMeasurements.find(([, value, integer]) => {
-      if (!value?.trim()) return false;
-      const number = Number(value);
-      return !Number.isFinite(number) || number < 0 || (integer && !Number.isInteger(number));
-    });
+    const invalidCropMeasurement = cropMeasurements.find(
+      ([, value, integer]) => {
+        if (!value?.trim()) return false;
+        const number = Number(value);
+        return (
+          !Number.isFinite(number) ||
+          number < 0 ||
+          (integer && !Number.isInteger(number))
+        );
+      },
+    );
     if (invalidCropMeasurement) {
       Alert.alert(
         'Check crop measurements',
-        `${invalidCropMeasurement[0]} must be a non-negative ${invalidCropMeasurement[2] ? 'whole number' : 'number'}.`,
+        `${invalidCropMeasurement[0]} must be a non-negative ${
+          invalidCropMeasurement[2] ? 'whole number' : 'number'
+        }.`,
       );
       return;
     }
@@ -107,10 +121,18 @@ export function ReportDetail({
       followUpDecision === 'complete' &&
       review.verificationStatus === 'For verification'
     ) {
-      Alert.alert(
-        'Finish the assessment',
-        'Choose Confirmed or No detection before marking this report complete. Reports that still need verification should have a follow-up visit.',
-      );
+      setShowCompletionWarning(true);
+      requestAnimationFrame(() => {
+        verificationStatusRef.current?.measureLayout(
+          scrollRef?.current as any,
+          (_x: number, y: number) =>
+            scrollRef?.current?.scrollTo({
+              y: Math.max(0, y - 18),
+              animated: true,
+            }),
+          () => undefined,
+        );
+      });
       return;
     }
     onSave();
@@ -247,11 +269,51 @@ export function ReportDetail({
           detail="Original values submitted by the farmer; these are preserved separately."
           styles={styles}
         />
-        <InfoLine label="Plant height" value={report.crop_characteristics?.plant_height_cm != null ? `${report.crop_characteristics.plant_height_cm} cm` : 'Not provided'} styles={styles} />
-        <InfoLine label="Leaves in a stalk" value={report.crop_characteristics?.leaves_per_stalk != null ? String(report.crop_characteristics.leaves_per_stalk) : 'Not provided'} styles={styles} />
-        <InfoLine label="Leaf length" value={report.crop_characteristics?.leaf_length_cm != null ? `${report.crop_characteristics.leaf_length_cm} cm` : 'Not provided'} styles={styles} />
-        <InfoLine label="Leaf width" value={report.crop_characteristics?.leaf_width_cm != null ? `${report.crop_characteristics.leaf_width_cm} cm` : 'Not provided'} styles={styles} />
-        <InfoLine label="Tillers" value={report.crop_characteristics?.tiller_count != null ? String(report.crop_characteristics.tiller_count) : 'Not provided'} styles={styles} />
+        <InfoLine
+          label="Plant height"
+          value={
+            report.crop_characteristics?.plant_height_cm != null
+              ? `${report.crop_characteristics.plant_height_cm} cm`
+              : 'Not provided'
+          }
+          styles={styles}
+        />
+        <InfoLine
+          label="Leaves in a stalk"
+          value={
+            report.crop_characteristics?.leaves_per_stalk != null
+              ? String(report.crop_characteristics.leaves_per_stalk)
+              : 'Not provided'
+          }
+          styles={styles}
+        />
+        <InfoLine
+          label="Leaf length"
+          value={
+            report.crop_characteristics?.leaf_length_cm != null
+              ? `${report.crop_characteristics.leaf_length_cm} cm`
+              : 'Not provided'
+          }
+          styles={styles}
+        />
+        <InfoLine
+          label="Leaf width"
+          value={
+            report.crop_characteristics?.leaf_width_cm != null
+              ? `${report.crop_characteristics.leaf_width_cm} cm`
+              : 'Not provided'
+          }
+          styles={styles}
+        />
+        <InfoLine
+          label="Tillers"
+          value={
+            report.crop_characteristics?.tiller_count != null
+              ? String(report.crop_characteristics.tiller_count)
+              : 'Not provided'
+          }
+          styles={styles}
+        />
       </View>
       <View style={styles.card}>
         <SectionTitle
@@ -315,29 +377,69 @@ export function ReportDetail({
           }
           styles={styles}
         />
-        <Text style={styles.fieldLabel}>Verification status</Text>
-        <View style={styles.choiceWrap}>
-          {visibleVerificationOptions.map(value => (
-            <Choice
-              key={value}
-              label={value}
-              selected={review.verificationStatus === value}
-              onPress={() => {
-                if (value === 'No detection') {
-                  setFollowUpDecision('complete');
-                  setReview((old: ReviewForm) => ({
-                    ...old,
-                    verificationStatus: value,
-                    followUpAt: '',
-                  }));
-                  return;
+        <View
+          ref={verificationStatusRef}
+          collapsable={false}
+          style={
+            showCompletionWarning
+              ? {
+                  borderWidth: 1,
+                  borderColor: colors.red,
+                  backgroundColor: colors.redSoft,
+                  borderRadius: 10,
+                  padding: 9,
+                  marginTop: 4,
                 }
-                update('verificationStatus', value);
-              }}
-              disabled={!canReview}
-              styles={styles}
-            />
-          ))}
+              : undefined
+          }
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              columnGap: 8,
+            }}
+          >
+            <Text style={styles.fieldLabel}>Verification status</Text>
+            {showCompletionWarning ? (
+              <Text
+                style={{
+                  color: colors.red,
+                  fontSize: 11,
+                  fontWeight: '800',
+                  flexShrink: 1,
+                }}
+              >
+                Finish the assessment: choose Confirmed or No detection.
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.choiceWrap}>
+            {visibleVerificationOptions.map(value => (
+              <Choice
+                key={value}
+                label={value}
+                selected={review.verificationStatus === value}
+                onPress={() => {
+                  if (value === 'No detection') {
+                    setFollowUpDecision('complete');
+                    setReview((old: ReviewForm) => ({
+                      ...old,
+                      verificationStatus: value,
+                      followUpAt: '',
+                    }));
+                    setShowCompletionWarning(false);
+                    return;
+                  }
+                  update('verificationStatus', value);
+                  if (value === 'Confirmed') setShowCompletionWarning(false);
+                }}
+                disabled={!canReview}
+                styles={styles}
+              />
+            ))}
+          </View>
         </View>
         <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
           SRA-assessed severity
@@ -357,21 +459,35 @@ export function ReportDetail({
             />
           ))}
         </View>
-        <Text style={[styles.fieldLabel, { marginTop: 18 }]}>SRA-assessed crop characteristics</Text>
-        <Text style={styles.inputHint}>Enter measurements observed or verified by SRA. These do not overwrite the farmer’s original values.</Text>
-        {([
-          ['Plant height (cm)', 'plantHeightCm', 'decimal-pad'],
-          ['Leaves in a stalk', 'leavesPerStalk', 'number-pad'],
-          ['Leaf length (cm)', 'leafLengthCm', 'decimal-pad'],
-          ['Leaf width (cm)', 'leafWidthCm', 'decimal-pad'],
-          ['Tillers', 'tillerCount', 'number-pad'],
-        ] as const).map(([label, key, keyboardType]) => (
+        <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
+          SRA-assessed crop characteristics
+        </Text>
+        <Text style={styles.inputHint}>
+          Enter measurements observed or verified by SRA. These do not overwrite
+          the farmer’s original values.
+        </Text>
+        {(
+          [
+            ['Plant height (cm)', 'plantHeightCm', 'decimal-pad'],
+            ['Leaves in a stalk', 'leavesPerStalk', 'number-pad'],
+            ['Leaf length (cm)', 'leafLengthCm', 'decimal-pad'],
+            ['Leaf width (cm)', 'leafWidthCm', 'decimal-pad'],
+            ['Tillers', 'tillerCount', 'number-pad'],
+          ] as const
+        ).map(([label, key, keyboardType]) => (
           <View key={key}>
             <Text style={styles.fieldLabel}>{label}</Text>
             <NumericStepperInput
               editable={canReview}
               value={review[key] || ''}
-              onChangeText={value => update(key, keyboardType === 'number-pad' ? value.replace(/\D/g, '') : decimalEntry(value))}
+              onChangeText={value =>
+                update(
+                  key,
+                  keyboardType === 'number-pad'
+                    ? value.replace(/\D/g, '')
+                    : decimalEntry(value),
+                )
+              }
               placeholder="Not assessed"
               placeholderTextColor={colors.muted}
               accessibilityLabel={label}

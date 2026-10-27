@@ -642,6 +642,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
               photoFailed={photoFailed}
               setPhotoFailed={setPhotoFailed}
               token={session.token}
+              scrollRef={workspaceScrollRef}
               onSave={() => void saveReviewAndNavigate()}
             />
           ) : null}

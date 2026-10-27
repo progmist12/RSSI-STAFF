@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { ApiError, apiRequest } from '../api';
 import {
   ApiPage,
+  CropCharacteristics,
   Farmer,
   FieldReport,
   ReviewForm,
@@ -441,6 +442,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       scheduledAt: string;
       visitFindings: string;
       checkings: VisitCheckingInput[];
+      cropCharacteristics?: CropCharacteristics;
     },
   ): Promise<StaffVisit | null> => {
     if (!session?.token || !online) return null;
@@ -475,6 +477,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       scheduledAt: string;
       visitFindings: string;
       checkings: VisitCheckingInput[];
+      cropCharacteristics: CropCharacteristics;
     },
   ): Promise<StaffVisit | null> => {
     if (!session?.token || !online) return null;

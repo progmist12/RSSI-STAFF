@@ -441,7 +441,12 @@ export function useStaffAppController() {
             setSelectedReport(refreshedReport);
           }
         } else {
-          failedRequests.push(describeFailure('Reports', reportResult.reason));
+          failedRequests.push(
+            describeFailure(
+              'GET /staff/reports?page=1&pageSize=20',
+              reportResult.reason,
+            ),
+          );
           unauthorized ||=
             reportResult.reason instanceof ApiError &&
             reportResult.reason.status === 401;
@@ -451,7 +456,10 @@ export function useStaffAppController() {
           setPendingTotal(pendingResult.value.meta?.total ?? 0);
         else {
           failedRequests.push(
-            describeFailure('Pending report count', pendingResult.reason),
+            describeFailure(
+              'GET /staff/reports?status=For%20verification&page=1&pageSize=1',
+              pendingResult.reason,
+            ),
           );
           unauthorized ||=
             pendingResult.reason instanceof ApiError &&
@@ -471,7 +479,12 @@ export function useStaffAppController() {
             if (refreshed) setSelectedFarmer(refreshed);
           }
         } else {
-          failedRequests.push(describeFailure('Farmers', farmerResult.reason));
+          failedRequests.push(
+            describeFailure(
+              'GET /staff/farmers?page=1&pageSize=20',
+              farmerResult.reason,
+            ),
+          );
           unauthorized ||=
             farmerResult.reason instanceof ApiError &&
             farmerResult.reason.status === 401;
@@ -488,7 +501,7 @@ export function useStaffAppController() {
           );
         } else {
           failedRequests.push(
-            describeFailure('Map locations', mapResult.reason),
+            describeFailure('GET /staff/map-locations', mapResult.reason),
           );
           unauthorized ||=
             mapResult.reason instanceof ApiError &&
@@ -503,7 +516,12 @@ export function useStaffAppController() {
           );
           setVisitPage(visitResult.value.meta?.page ?? 1);
         } else {
-          failedRequests.push(describeFailure('Visits', visitResult.reason));
+          failedRequests.push(
+            describeFailure(
+              'GET /staff/visits?page=1&pageSize=20',
+              visitResult.reason,
+            ),
+          );
           unauthorized ||=
             visitResult.reason instanceof ApiError &&
             visitResult.reason.status === 401;
@@ -512,14 +530,7 @@ export function useStaffAppController() {
           showNotice('Your session expired. Please sign in again.', 'error');
           await signOut(false);
         } else if (failedRequests.length && online) {
-          const details = failedRequests.slice(0, 2).join(' · ');
-          const remaining = failedRequests.length - 2;
-          showNotice(
-            `Refresh failed: ${details}${
-              remaining > 0 ? ` · and ${remaining} more request(s)` : ''
-            }`,
-            'error',
-          );
+          showNotice(`Refresh failed: ${failedRequests.join(' · ')}`, 'error');
         } else if (!failedRequests.length) {
           setNotice('');
         }

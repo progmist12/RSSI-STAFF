@@ -2,7 +2,7 @@ import {StaffProfile} from './types';
 import type {Asset} from 'react-native-image-picker';
 
 // Shared test deployment used by the RSSI mobile clients. Keep this out of UI.
-const API_BASE_URL = 'https://groved-subdialectally-shellie.ngrok-free.dev';
+const API_BASE_URL = 'https://shelving-thicket-handrail.ngrok-free.dev';
 const API_ROOT = `${API_BASE_URL}/api/v1`;
 
 export class ApiError extends Error {

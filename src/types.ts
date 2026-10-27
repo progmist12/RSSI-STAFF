@@ -77,6 +77,14 @@ export type VisitCheckingInput = {
   finding: string;
 };
 
+export type CropCharacteristics = {
+  leavesPerStalk: number | null;
+  plantHeight: number | null;
+  leafLength: number | null;
+  leafWidth: number | null;
+  tillers: number | null;
+};
+
 export type StaffVisit = {
   id: number;
   report_id: number;
@@ -90,6 +98,7 @@ export type StaffVisit = {
   completed_at: string | null;
   status: 'scheduled' | 'completed' | 'cancelled';
   visit_findings: string | null;
+  crop_characteristics?: CropCharacteristics | null;
   staff_name: string | null;
   completed_by_name: string | null;
   checkings: Array<{

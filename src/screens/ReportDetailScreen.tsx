@@ -23,6 +23,7 @@ const severityOptions = [
 ];
 export function ReportDetail({
   report,
+  visits = [],
   review,
   setReview,
   styles,
@@ -35,6 +36,13 @@ export function ReportDetail({
   token,
   onSave,
 }: any) {
+  const cropVisit = [...visits]
+    .filter((visit: any) => visit.crop_characteristics)
+    .sort((a: any, b: any) =>
+      (b.completed_at || b.updated_at || '').localeCompare(
+        a.completed_at || a.updated_at || '',
+      ),
+    )[0];
   const [followUpDecision, setFollowUpDecision] = useState<
     'needed' | 'complete' | null
   >(
@@ -128,6 +136,50 @@ export function ReportDetail({
             </Text>
           </View>
         </View>
+      </View>
+      <View style={styles.card}>
+        <SectionTitle
+          title="Crop characteristics"
+          detail={
+            cropVisit
+              ? `From field visit · ${formatDate(
+                  cropVisit.completed_at || cropVisit.scheduled_at,
+                )}`
+              : 'Recorded during a follow-up visit'
+          }
+          styles={styles}
+        />
+        {cropVisit?.crop_characteristics ? (
+          <View style={{ gap: 9 }}>
+            {[
+              [
+                'Leaves per stalk',
+                cropVisit.crop_characteristics.leavesPerStalk,
+                'count',
+              ],
+              [
+                'Plant height',
+                cropVisit.crop_characteristics.plantHeight,
+                'cm',
+              ],
+              ['Leaf length', cropVisit.crop_characteristics.leafLength, 'cm'],
+              ['Leaf width', cropVisit.crop_characteristics.leafWidth, 'cm'],
+              ['Tillers', cropVisit.crop_characteristics.tillers, 'count'],
+            ].map(([label, value, unit]: any) => (
+              <InfoLine
+                key={label}
+                label={label}
+                value={value == null ? 'Not recorded' : `${value} ${unit}`}
+                styles={styles}
+              />
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.bodyText}>
+            No crop measurements have been recorded for this report yet. Add
+            them from Visits by editing its follow-up visit.
+          </Text>
+        )}
       </View>
       <View style={styles.card}>
         <SectionTitle

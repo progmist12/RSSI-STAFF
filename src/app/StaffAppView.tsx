@@ -588,6 +588,9 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           {selectedReport && review ? (
             <ReportDetail
               report={selectedReport}
+              visits={visits.filter(
+                visit => visit.report_id === selectedReport.id,
+              )}
               review={review}
               setReview={setReview}
               styles={styles}

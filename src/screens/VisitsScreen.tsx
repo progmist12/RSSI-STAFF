@@ -10,6 +10,7 @@ import {
 import { DatePickerField } from '../components/DatePickerField';
 import {
   FieldReport,
+  CropCharacteristics,
   StaffVisit,
   VisitCheckingInput,
   VisitCheckingResult,
@@ -23,7 +24,41 @@ type VisitPayload = {
   scheduledAt: string;
   visitFindings: string;
   checkings: VisitCheckingInput[];
+  cropCharacteristics: CropCharacteristics;
 };
+type VisitCreatePayload = Omit<VisitPayload, 'cropCharacteristics'>;
+
+const CROP_FIELDS: {
+  key: keyof CropCharacteristics;
+  label: string;
+  unit: string;
+}[] = [
+  { key: 'leavesPerStalk', label: 'Leaves per stalk', unit: 'count' },
+  { key: 'plantHeight', label: 'Plant height', unit: 'cm' },
+  { key: 'leafLength', label: 'Leaf length', unit: 'cm' },
+  { key: 'leafWidth', label: 'Leaf width', unit: 'cm' },
+  { key: 'tillers', label: 'Tillers', unit: 'count' },
+];
+
+function emptyCropCharacteristics(): CropCharacteristics {
+  return {
+    leavesPerStalk: null,
+    plantHeight: null,
+    leafLength: null,
+    leafWidth: null,
+    tillers: null,
+  };
+}
+
+function cropValue(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function cropDisplay(value: number | null | undefined, unit: string) {
+  return value == null ? null : `${value} ${unit}`;
+}
 
 type FarmHistoryGroup = {
   key: string;
@@ -146,7 +181,7 @@ export function VisitsScreen({
   onLoadMore: (kind: 'reports' | 'farmers' | 'visits') => void;
   onCreateVisit: (
     reportId: number,
-    values: VisitPayload,
+    values: VisitCreatePayload,
   ) => Promise<StaffVisit | null>;
   onUpdateVisit: (
     visitId: number,
@@ -175,6 +210,8 @@ export function VisitsScreen({
   const [editScheduledAt, setEditScheduledAt] = useState('');
   const [visitFindings, setVisitFindings] = useState('');
   const [checkings, setCheckings] = useState<VisitCheckingInput[]>([]);
+  const [cropCharacteristics, setCropCharacteristics] =
+    useState<CropCharacteristics>(emptyCropCharacteristics);
 
   useEffect(() => {
     onHistoryBackHandlerChange(() => {
@@ -410,6 +447,9 @@ export function VisitsScreen({
     setEditScheduledAt(visit.scheduled_at.slice(0, 10));
     setVisitFindings(visit.visit_findings || '');
     setCheckings(checkingTemplate(visit.checkings));
+    setCropCharacteristics(
+      visit.crop_characteristics || emptyCropCharacteristics(),
+    );
   };
 
   const submitSchedule = async () => {
@@ -448,6 +488,7 @@ export function VisitsScreen({
       scheduledAt: editScheduledAt,
       visitFindings: visitFindings.trim(),
       checkings,
+      cropCharacteristics,
     });
     if (updated) setEditingVisitId(null);
   };
@@ -471,6 +512,8 @@ export function VisitsScreen({
                 result: item.result,
                 finding: item.finding || '',
               })),
+              cropCharacteristics:
+                visit.crop_characteristics || emptyCropCharacteristics(),
             }),
         },
       ],
@@ -790,6 +833,44 @@ export function VisitsScreen({
                     {visit.visit_findings}
                   </Text>
                 ) : null}
+                {visit.crop_characteristics ? (
+                  <View
+                    style={{
+                      marginTop: 8,
+                      padding: 9,
+                      borderRadius: 9,
+                      backgroundColor: colors.surfaceAlt,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: colors.ink,
+                        fontSize: 11,
+                        fontWeight: '800',
+                      }}
+                    >
+                      Crop characteristics
+                    </Text>
+                    <Text
+                      style={{
+                        color: colors.muted,
+                        fontSize: 11,
+                        lineHeight: 17,
+                        marginTop: 3,
+                      }}
+                    >
+                      {CROP_FIELDS.map(field => {
+                        const value = cropDisplay(
+                          visit.crop_characteristics?.[field.key],
+                          field.unit,
+                        );
+                        return value ? `${field.label}: ${value}` : null;
+                      })
+                        .filter(Boolean)
+                        .join(' · ') || 'No measurements recorded'}
+                    </Text>
+                  </View>
+                ) : null}
                 {visit.checkings.map(check => (
                   <View
                     key={check.id}
@@ -849,6 +930,73 @@ export function VisitsScreen({
                         colors={colors}
                         disabled={!online || visitBusy}
                       />
+                    </View>
+                    <Text
+                      style={{
+                        color: colors.ink,
+                        fontSize: 12,
+                        fontWeight: '800',
+                        marginBottom: 6,
+                      }}
+                    >
+                      Crop characteristics
+                    </Text>
+                    <Text
+                      style={{
+                        color: colors.muted,
+                        fontSize: 10,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Measure the stalk and leaves. Lengths and widths are in
+                      centimeters.
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        flexWrap: 'wrap',
+                        gap: 8,
+                        marginBottom: 12,
+                      }}
+                    >
+                      {CROP_FIELDS.map(field => (
+                        <View key={field.key} style={{ width: '48%' }}>
+                          <Text
+                            style={{
+                              color: colors.muted,
+                              fontSize: 10,
+                              fontWeight: '700',
+                              marginBottom: 4,
+                            }}
+                          >
+                            {field.label} ({field.unit})
+                          </Text>
+                          <TextInput
+                            value={
+                              cropCharacteristics[field.key] == null
+                                ? ''
+                                : String(cropCharacteristics[field.key])
+                            }
+                            onChangeText={value =>
+                              setCropCharacteristics(current => ({
+                                ...current,
+                                [field.key]: cropValue(value),
+                              }))
+                            }
+                            keyboardType="decimal-pad"
+                            placeholder="Optional"
+                            placeholderTextColor={colors.muted}
+                            style={{
+                              borderWidth: 1,
+                              borderColor: colors.line,
+                              borderRadius: 8,
+                              padding: 9,
+                              color: colors.ink,
+                              backgroundColor: colors.surfaceAlt,
+                            }}
+                          />
+                        </View>
+                      ))}
                     </View>
                     {checkings.map((check, index) => (
                       <View

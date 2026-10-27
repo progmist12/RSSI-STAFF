@@ -110,9 +110,8 @@ function MapScreenView({
             .includes(needle);
         let visibleReports = location.reports.filter(
           report =>
-            report.verification_status === 'For verification' &&
-            (statusIndex === 0 ||
-              report.verification_status === statusOptions[statusIndex]),
+            statusIndex === 0 ||
+            report.verification_status === statusOptions[statusIndex],
         );
         const noReport = location.reports.length === 0;
         if (needle && !placeMatches) {
@@ -212,8 +211,8 @@ function MapScreenView({
           Negros coverage
         </Text>
         <Text style={{ color: colors.muted, fontSize: 12, marginTop: 5 }}>
-          Only reports awaiting verification appear on the map. Open a farm’s
-          history to review completed reports and visits.
+          Reports are grouped by farm or approximate municipality. Filter by
+          status to show all reports or only those awaiting verification.
         </Text>
       </View>
 
@@ -276,7 +275,8 @@ function MapScreenView({
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text style={{ color: colors.ink, fontSize: 12, fontWeight: '700' }}>
-          {visibleReportCount} reports for verification
+          {visibleReportCount}{' '}
+          {statusIndex === 0 ? 'reports shown' : 'reports for verification'}
         </Text>
         <Text style={{ color: colors.muted, fontSize: 11 }}>
           {filteredLocations.length} map locations

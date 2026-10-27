@@ -6,7 +6,12 @@ const API_BASE_URL = 'https://shelving-thicket-handrail.ngrok-free.dev';
 const API_ROOT = `${API_BASE_URL}/api/v1`;
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string) {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+    public payload?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'ApiError';
   }
@@ -26,6 +31,9 @@ const messages: Record<string, string> = {
   active_visit_exists: 'Complete or cancel the current scheduled visit first.',
   visit_not_found: 'This field visit is no longer available.',
   visit_is_locked: 'Completed and cancelled visits are preserved as history.',
+  visit_conflict: 'This visit changed on the server. Choose which version to keep.',
+  report_review_completed: 'This report was completed elsewhere. Its visit can no longer be changed.',
+  invalid_visit_version: 'Refresh the visit before saving your changes.',
   invalid_profile_photo: 'Choose a JPEG, PNG, or WebP photo no larger than 5 MB.',
 };
 
@@ -46,7 +54,7 @@ async function decode<T>(response: Response): Promise<T> {
       : typeof body.message === 'string'
         ? body.message
         : messages[code] || code.replaceAll('_', ' ');
-    throw new ApiError(response.status, code, message);
+    throw new ApiError(response.status, code, message, body);
   }
   return body as T;
 }

@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { photoUrl } from '../api';
 import { DatePickerField } from '../components/DatePickerField';
+import { reportWorkflowLabel, reportWorkflowTone } from '../app/reportReview';
 import { NumericStepperInput } from '../components/NumericStepperInput';
 import { Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
 import {
@@ -62,10 +63,7 @@ export function ReportDetail({
   >(
     review.followUpAt
       ? 'needed'
-      : report.verification_status !== 'For verification' ||
-        report.sra_severity ||
-        report.assessment_rationale ||
-        report.reviewer_note
+      : report.review_completed_at || report.workflow_stage === 'completed'
       ? 'complete'
       : null,
   );
@@ -103,6 +101,28 @@ export function ReportDetail({
       );
       return;
     }
+    if (
+      review.verificationStatus === 'Confirmed' &&
+      !['Mild', 'Moderate', 'Severe', 'Highly severe'].includes(
+        review.sraSeverity,
+      )
+    ) {
+      Alert.alert(
+        'Choose SRA severity',
+        'A confirmed report needs an SRA-assessed severity before it can be saved.',
+      );
+      return;
+    }
+    if (
+      review.verificationStatus === 'No detection' &&
+      !review.reviewerNote.trim()
+    ) {
+      Alert.alert(
+        'Add a reviewer message',
+        'A no-detection decision needs a reviewer message before the report can be completed.',
+      );
+      return;
+    }
     if (followUpDecision === null) {
       Alert.alert(
         'Choose the next step',
@@ -135,7 +155,7 @@ export function ReportDetail({
       });
       return;
     }
-    onSave();
+    onSave(followUpDecision);
   };
   const shade = severityStyle(report.farmer_severity, styles);
   return (
@@ -150,17 +170,24 @@ export function ReportDetail({
               {report.province}
             </Text>
           </View>
-          <Badge
-            label={report.verification_status}
-            tone={
-              report.verification_status === 'For verification'
-                ? 'amber'
-                : report.verification_status === 'Confirmed'
-                ? 'green'
-                : 'muted'
-            }
-            styles={styles}
-          />
+          <View style={{ alignItems: 'flex-end', gap: 5 }}>
+            <Badge
+              label={reportWorkflowLabel(report)}
+              tone={reportWorkflowTone(report)}
+              styles={styles}
+            />
+            <Badge
+              label={report.verification_status}
+              tone={
+                report.verification_status === 'For verification'
+                  ? 'amber'
+                  : report.verification_status === 'Confirmed'
+                  ? 'green'
+                  : 'muted'
+              }
+              styles={styles}
+            />
+          </View>
         </View>
         <View style={styles.detailMetrics}>
           <View style={styles.detailMetric}>
@@ -533,7 +560,7 @@ export function ReportDetail({
             label="Needs follow-up visit"
             selected={followUpDecision === 'needed'}
             onPress={() => setFollowUpDecision('needed')}
-            disabled={!canReview}
+            disabled={!canReview || review.verificationStatus === 'No detection'}
             styles={styles}
           />
           <Choice

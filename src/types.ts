@@ -75,6 +75,8 @@ export type FieldReport = {
   assessment_rationale?: string | null;
   reviewer_note?: string | null;
   follow_up_at?: string | null;
+  review_completed_at?: string | null;
+  workflow_stage?: 'needs_review' | 'reviewed' | 'confirmed' | 'upcoming' | 'completed';
   /** Local-only marker for review edits queued offline; never synced to the API. */
   review_pending?: boolean;
 };
@@ -123,6 +125,8 @@ export type StaffVisit = {
   }>;
   created_at: string;
   updated_at: string;
+  /** Local-only indicator while an offline visit change waits for resolution or sync. */
+  sync_state?: 'pending' | 'conflict';
 };
 
 export type StaffMapReport = {

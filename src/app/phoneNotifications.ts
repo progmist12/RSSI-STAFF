@@ -28,14 +28,14 @@ export async function preparePhoneNotifications() {
   return true;
 }
 
-export async function notifyNewReport(code: string, reportId: number) {
+export async function notifyStaffUpdate(id: string, title: string, body: string, reportId?: number) {
   const notifee = getNotifee();
   if (!notifee) return;
   await notifee.default.displayNotification({
-    id: `rssi-report-${reportId}`,
-    title: 'New field report',
-    body: `${code} has been submitted and is ready to review.`,
-    data: { reportId: String(reportId) },
+    id: id.startsWith('rssi-') ? id : `rssi-update-${id}`,
+    title,
+    body,
+    data: reportId ? { reportId: String(reportId) } : {},
     android: {
       channelId: CHANNEL_ID,
       pressAction: { id: 'default' },
@@ -67,35 +67,40 @@ async function replaceVisitReminders(visits: StaffVisit[]) {
       if (visitTime < 8 * 60 || (reminder.getTime() <= now && item.scheduled.getTime() > now)) {
         reminder.setTime(item.scheduled.getTime());
       }
-      return { ...item, reminder };
+      const overdueReminder = new Date(item.scheduled);
+      overdueReminder.setDate(overdueReminder.getDate() + 1);
+      overdueReminder.setHours(9, 0, 0, 0);
+      return { ...item, reminder, overdueReminder };
     })
-    .filter(item => item.reminder.getTime() > now)
+    .filter(item => item.reminder.getTime() > now || item.overdueReminder.getTime() > now)
     .sort((a, b) => a.reminder.getTime() - b.reminder.getTime())
     .slice(0, 45);
 
-  await Promise.all(
-    reminders.map(({ visit, reminder }) => {
-      const trigger: TimestampTrigger = {
-        type: notifee.TriggerType.TIMESTAMP,
-        timestamp: reminder.getTime(),
-      };
-      return notifee.default.createTriggerNotification(
-        {
+  const pending = reminders.flatMap(({ visit, reminder, overdueReminder }) => {
+    const scheduled: Array<{ fireAt: number; task: Promise<string> }> = [];
+    if (reminder.getTime() > now) {
+      const trigger: TimestampTrigger = { type: notifee.TriggerType.TIMESTAMP, timestamp: reminder.getTime() };
+      scheduled.push({ fireAt: reminder.getTime(), task: notifee.default.createTriggerNotification({
           id: `${VISIT_PREFIX}${visit.id}`,
           title: 'Visit scheduled for today',
           body: `${visit.report_code} · ${visit.property_name}, ${visit.municipality}`,
           data: { reportId: String(visit.report_id) },
-          android: {
-            channelId: CHANNEL_ID,
-            pressAction: { id: 'default' },
-            autoCancel: true,
-            smallIcon: 'ic_launcher',
-          },
-        },
-        trigger,
-      );
-    }),
-  );
+          android: { channelId: CHANNEL_ID, pressAction: { id: 'default' }, autoCancel: true, smallIcon: 'ic_launcher' },
+        }, trigger) });
+    }
+    if (overdueReminder.getTime() > now) {
+      const trigger: TimestampTrigger = { type: notifee.TriggerType.TIMESTAMP, timestamp: overdueReminder.getTime() };
+      scheduled.push({ fireAt: overdueReminder.getTime(), task: notifee.default.createTriggerNotification({
+          id: `${VISIT_PREFIX}${visit.id}-overdue`,
+          title: 'Check a follow-up visit',
+          body: `No outcome is recorded for ${visit.report_code}. Check whether the visit is still pending.`,
+          data: { reportId: String(visit.report_id) },
+          android: { channelId: CHANNEL_ID, pressAction: { id: 'default' }, autoCancel: true, smallIcon: 'ic_launcher' },
+        }, trigger) });
+    }
+    return scheduled;
+  }).sort((left, right) => left.fireAt - right.fireAt).slice(0, 45);
+  await Promise.all(pending.map(item => item.task));
 }
 
 export function listenForReportNotificationPress(

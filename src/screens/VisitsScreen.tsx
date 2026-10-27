@@ -19,6 +19,7 @@ import {
 import { Palette } from '../theme';
 import { formatDate } from '../utils';
 import { reportIsCompleteWithoutVisit } from '../app/reportReview';
+import type { PendingVisitChange } from '../offlineStore';
 
 type VisitFilter = 'Scheduled' | 'Completed' | 'Cancelled';
 type VisitPayload = {
@@ -159,6 +160,8 @@ export function VisitsScreen({
   loadingMore,
   refreshing,
   visitBusy,
+  pendingVisitChanges,
+  onResolveVisitChange,
   canManage,
   onLoadMore,
   onCreateVisit,
@@ -178,6 +181,11 @@ export function VisitsScreen({
   loadingMore: 'reports' | 'farmers' | 'visits' | null;
   refreshing: boolean;
   visitBusy: boolean;
+  pendingVisitChanges: PendingVisitChange[];
+  onResolveVisitChange: (
+    changeId: string,
+    choice: 'keep_local' | 'use_server',
+  ) => void;
   canManage: boolean;
   onLoadMore: (kind: 'reports' | 'farmers' | 'visits') => void;
   onCreateVisit: (
@@ -572,17 +580,88 @@ export function VisitsScreen({
         styles={styles}
       />
 
+      {pendingVisitChanges.length ? (
+        <View
+          style={{
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: pendingVisitChanges.some(item => item.state === 'conflict')
+              ? colors.amber
+              : colors.line,
+            backgroundColor: colors.surface,
+          }}
+        >
+          <Text style={{ color: colors.ink, fontSize: 12, fontWeight: '800' }}>
+            {pendingVisitChanges.length} visit change{pendingVisitChanges.length === 1 ? '' : 's'} on this device
+          </Text>
+          <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 4 }}>
+            {online
+              ? 'Changes without conflicts sync automatically while this device is online.'
+              : 'Saved on this device. Changes will sync when the connection returns.'}
+          </Text>
+          {pendingVisitChanges.filter(item => item.state === 'conflict').map(change => (
+            <View
+              key={change.id}
+              style={{
+                marginTop: 9,
+                padding: 10,
+                borderRadius: 9,
+                backgroundColor: colors.surfaceAlt,
+                borderWidth: 1,
+                borderColor: colors.line,
+              }}
+            >
+              <Text style={{ color: colors.amber, fontSize: 11, fontWeight: '800' }}>
+                Sync conflict · {change.localVisit.report_code || `Report ${change.reportId}`}
+              </Text>
+              <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 4 }}>
+                {change.conflictMessage || 'This visit changed on the server while you were offline.'}
+              </Text>
+              {change.remoteVisit ? (
+                <Text style={{ color: colors.ink, fontSize: 11, lineHeight: 16, marginTop: 5 }}>
+                  Server version: {formatDate(change.remoteVisit.scheduled_at)} · {change.remoteVisit.status}
+                </Text>
+              ) : null}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 9 }}>
+                {change.remoteVisit ? (
+                  <Pressable
+                    onPress={() => onResolveVisitChange(change.id, 'keep_local')}
+                    style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, backgroundColor: colors.blue }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '800' }}>Keep my changes</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  onPress={() => onResolveVisitChange(change.id, 'use_server')}
+                  style={{ paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.line }}
+                >
+                  <Text style={{ color: colors.blue, fontSize: 10, fontWeight: '800' }}>
+                    {change.remoteVisit
+                      ? 'Use server version'
+                      : change.baseVisit
+                      ? 'Restore last loaded version'
+                      : 'Discard queued change'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {canManage ? (
         <Pressable
           onPress={() => setScheduleOpen(value => !value)}
-          disabled={!online || visitBusy}
+          disabled={visitBusy}
           style={{
             marginBottom: 12,
             padding: 13,
             borderRadius: 10,
             alignItems: 'center',
             backgroundColor: colors.blue,
-            opacity: online ? 1 : 0.55,
+            opacity: visitBusy ? 0.55 : 1,
           }}
         >
           <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>
@@ -676,7 +755,7 @@ export function VisitsScreen({
               value={scheduledAt}
               onChange={setScheduledAt}
               colors={colors}
-              disabled={!online || visitBusy}
+              disabled={visitBusy}
             />
           </View>
           <TextInput
@@ -698,14 +777,14 @@ export function VisitsScreen({
           />
           <Pressable
             onPress={() => void submitSchedule()}
-            disabled={!online || visitBusy || !reportId}
+            disabled={visitBusy || !reportId}
             style={{
               marginTop: 10,
               padding: 12,
               alignItems: 'center',
               borderRadius: 9,
               backgroundColor: colors.blue,
-              opacity: !online || visitBusy || !reportId ? 0.5 : 1,
+              opacity: visitBusy || !reportId ? 0.5 : 1,
             }}
           >
             <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>
@@ -835,6 +914,18 @@ export function VisitsScreen({
                     {visit.status}
                   </Text>
                 </View>
+                {visit.sync_state ? (
+                  <Text
+                    style={{
+                      color: visit.sync_state === 'conflict' ? colors.amber : colors.blue,
+                      fontSize: 10,
+                      fontWeight: '800',
+                      marginTop: 7,
+                    }}
+                  >
+                    {visit.sync_state === 'conflict' ? 'Needs conflict resolution' : 'Saved on device · waiting to sync'}
+                  </Text>
+                ) : null}
                 <Text
                   style={{ color: colors.muted, fontSize: 11, marginTop: 9 }}
                 >
@@ -964,7 +1055,7 @@ export function VisitsScreen({
                         value={editScheduledAt}
                         onChange={setEditScheduledAt}
                         colors={colors}
-                        disabled={!online || visitBusy}
+                        disabled={visitBusy}
                       />
                     </View>
                     <Text
@@ -1154,14 +1245,14 @@ export function VisitsScreen({
                     />
                     <Pressable
                       onPress={() => void saveVisit(visit, 'scheduled')}
-                      disabled={!online || visitBusy}
+                      disabled={visitBusy}
                       style={{
                         marginTop: 9,
                         padding: 11,
                         alignItems: 'center',
                         borderRadius: 9,
                         backgroundColor: colors.blue,
-                        opacity: !online || visitBusy ? 0.5 : 1,
+                        opacity: visitBusy ? 0.5 : 1,
                       }}
                     >
                       <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>
@@ -1170,14 +1261,14 @@ export function VisitsScreen({
                     </Pressable>
                     <Pressable
                       onPress={() => void saveVisit(visit, 'completed')}
-                      disabled={!online || visitBusy}
+                      disabled={visitBusy}
                       style={{
                         marginTop: 7,
                         padding: 11,
                         alignItems: 'center',
                         borderRadius: 9,
                         backgroundColor: colors.green,
-                        opacity: !online || visitBusy ? 0.5 : 1,
+                        opacity: visitBusy ? 0.5 : 1,
                       }}
                     >
                       <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>
@@ -1231,13 +1322,12 @@ export function VisitsScreen({
                   {canManage && visit.status === 'scheduled' && !editing ? (
                     <Pressable
                       onPress={() => startEditing(visit)}
-                      disabled={!online}
                       style={{
                         paddingVertical: 8,
                         paddingHorizontal: 11,
                         borderRadius: 8,
                         backgroundColor: colors.blueSoft,
-                        opacity: online ? 1 : 0.5,
+                        opacity: 1,
                       }}
                     >
                       <Text
@@ -1254,14 +1344,14 @@ export function VisitsScreen({
                   {canManage && visit.status === 'scheduled' ? (
                     <Pressable
                       onPress={() => cancelVisit(visit)}
-                      disabled={!online || visitBusy}
+                      disabled={visitBusy}
                       style={{
                         paddingVertical: 8,
                         paddingHorizontal: 11,
                         borderRadius: 8,
                         borderWidth: 1,
                         borderColor: colors.line,
-                        opacity: online ? 1 : 0.5,
+                        opacity: visitBusy ? 0.5 : 1,
                       }}
                     >
                       <Text
@@ -1794,8 +1884,9 @@ export function VisitsScreen({
       ) : null}
       {!online ? (
         <Text style={[styles.listFootnote, { marginTop: 7 }]}>
-          Visit changes require a connection. You can still review cached visit
-          records offline.
+          Visit edits, checks, and scheduling are saved on this device while
+          offline. Pending changes sync when connection returns; resolve any
+          conflicts shown above before considering them saved to the workspace.
         </Text>
       ) : null}
     </View>

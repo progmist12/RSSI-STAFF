@@ -12,31 +12,19 @@ import {
   VisitCheckingInput,
 } from '../types';
 import {
+  PendingVisitChange,
   PendingReview,
   readPendingReviews,
+  readPendingVisitChanges,
   savePendingReviews,
+  savePendingVisitChanges,
 } from '../offlineStore';
-import { reportIsCompleteWithoutVisit, reviewFromReport, reviewPayload } from './reportReview';
-import { syncFollowUpVisit } from './followUpVisits';
+import { reportHasReview, reportIsCompleteWithoutVisit, reportWorkflowStage, reviewFromReport, reviewPayload } from './reportReview';
+import { visitPayloadForApi } from './visitPayload';
 
 export type LoadMoreKind = 'reports' | 'farmers' | 'visits';
 type Setter<T> = Dispatch<SetStateAction<T>>;
 type NoticeKind = 'error' | 'success' | 'info';
-
-function reportHasReview(report: FieldReport) {
-  return Boolean(
-    report.verification_status !== 'For verification' ||
-      report.sra_severity ||
-      report.assessment_rationale?.trim() ||
-      report.reviewer_note?.trim() ||
-      report.follow_up_at ||
-      report.sra_crop_assessment?.plant_height_cm != null ||
-      report.sra_crop_assessment?.leaves_per_stalk != null ||
-      report.sra_crop_assessment?.leaf_length_cm != null ||
-      report.sra_crop_assessment?.leaf_width_cm != null ||
-      report.sra_crop_assessment?.tiller_count != null,
-  );
-}
 
 type StaffRecordActionOptions = {
   session: StaffSession | null;
@@ -48,6 +36,8 @@ type StaffRecordActionOptions = {
   setFarmers: Setter<Farmer[]>;
   visits: StaffVisit[];
   setVisits: Setter<StaffVisit[]>;
+  pendingVisitChanges: PendingVisitChange[];
+  setPendingVisitChanges: Setter<PendingVisitChange[]>;
   selectedReport: FieldReport | null;
   setSelectedReport: Setter<FieldReport | null>;
   selectedFarmer: Farmer | null;
@@ -94,6 +84,8 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     setFarmers,
     visits,
     setVisits,
+    pendingVisitChanges,
+    setPendingVisitChanges,
     selectedReport,
     setSelectedReport,
     selectedFarmer,
@@ -128,6 +120,70 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     addNotification,
     refreshData,
   } = options;
+
+  const mergeReviewVisit = (visit: StaffVisit | null | undefined) => {
+    if (!visit) return;
+    const wasLoaded = visits.some(item => item.id === visit.id);
+    setVisits(items =>
+      wasLoaded
+        ? items.map(item => (item.id === visit.id ? visit : item))
+        : visit.status === 'scheduled'
+        ? [visit, ...items]
+        : items,
+    );
+    if (!wasLoaded && visit.status === 'scheduled') {
+      setVisitTotal(total => total + 1);
+    }
+  };
+
+  const queueVisitLocally = async (
+    kind: PendingVisitChange['kind'],
+    reportId: number,
+    visit: StaffVisit,
+    payload: PendingVisitChange['payload'],
+    expectedUpdatedAt: string | null,
+    conflict?: { message: string; remoteVisit?: StaffVisit | null },
+    baseVisit?: StaffVisit | null,
+  ) => {
+    if (!session) return null;
+    const current = await readPendingVisitChanges(session.user.id);
+    const existing = current.find(item =>
+      visit.id < 0
+        ? item.localVisit.id === visit.id ||
+          (item.kind === 'create' && item.reportId === reportId)
+        : item.visitId === visit.id,
+    );
+    const change: PendingVisitChange = {
+      id: existing?.id || `visit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      kind: existing?.kind === 'create' ? 'create' : kind,
+      reportId,
+      visitId: existing?.kind === 'create' ? null : visit.id,
+      localVisit: { ...visit, sync_state: conflict ? 'conflict' : existing?.state || 'pending' },
+      baseVisit: existing?.baseVisit ?? baseVisit ?? null,
+      expectedUpdatedAt: existing?.expectedUpdatedAt ?? expectedUpdatedAt,
+      payload,
+      state: conflict ? 'conflict' : existing?.state || 'pending',
+      conflictMessage: conflict?.message || existing?.conflictMessage,
+      remoteVisit: conflict?.remoteVisit ?? existing?.remoteVisit,
+      savedAt: new Date().toISOString(),
+    };
+    const next = [...current.filter(item => item.id !== existing?.id), change];
+    await savePendingVisitChanges(session.user.id, next);
+    setPendingVisitChanges(next);
+    setVisits(items => {
+      const alreadyLoaded = items.some(item => item.id === visit.id);
+      return alreadyLoaded
+        ? items.map(item => item.id === visit.id ? change.localVisit : item)
+        : [change.localVisit, ...items];
+    });
+    showNotice(
+      conflict
+        ? 'The server has a newer visit record. Resolve the conflict below.'
+        : 'Visit saved on this device and waiting to sync.',
+      conflict ? 'error' : 'success',
+    );
+    return change.localVisit;
+  };
 
   const openReport = async (reportOrId: FieldReport | number) => {
     if (!session) return false;
@@ -219,7 +275,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     }
   };
 
-  const queueReviewLocally = async () => {
+  const queueReviewLocally = async (nextStep: 'needed' | 'complete') => {
     if (!session || !selectedReport || !review) return false;
     const optimistic: FieldReport = {
       ...selectedReport,
@@ -229,7 +285,13 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         review.sraSeverity === 'Not assessed' ? null : review.sraSeverity,
       assessment_rationale: review.assessmentRationale,
       reviewer_note: review.reviewerNote,
-      follow_up_at: review.followUpAt || null,
+      follow_up_at: nextStep === 'needed' ? review.followUpAt || null : null,
+      review_completed_at:
+        nextStep === 'complete' &&
+        !review.followUpAt &&
+        ['Confirmed', 'No detection'].includes(review.verificationStatus)
+          ? new Date().toISOString()
+          : null,
       sra_crop_assessment: {
         plant_height_cm: review.plantHeightCm ? Number(review.plantHeightCm) : null,
         leaves_per_stalk: review.leavesPerStalk ? Number(review.leavesPerStalk) : null,
@@ -238,13 +300,22 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         tiller_count: review.tillerCount ? Number(review.tillerCount) : null,
       },
     };
+    optimistic.workflow_stage = optimistic.review_completed_at
+      ? 'completed'
+      : optimistic.follow_up_at
+      ? 'upcoming'
+      : optimistic.verification_status === 'Confirmed'
+      ? 'confirmed'
+      : reportHasReview(optimistic)
+      ? 'reviewed'
+      : 'needs_review';
     const current = await readPendingReviews(session.user.id);
     const next: PendingReview[] = [
       ...current.filter(item => item.reportId !== selectedReport.id),
       {
         reportId: selectedReport.id,
         review,
-        previousFollowUpAt: selectedReport.follow_up_at || '',
+        nextStep,
         updatedAt: new Date().toISOString(),
       },
     ];
@@ -256,16 +327,10 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     );
     addNotification(
       'Review saved on this device',
-      `${
-        selectedReport.code
-      } is queued and will sync when you are back online.${
-        review.followUpAt
-          ? ' Its follow-up visit will be scheduled during sync.'
-          : ''
-      }`,
+      `${selectedReport.code} is queued and will sync when you are back online.${nextStep === 'needed' ? ' Its follow-up visit will be scheduled during sync.' : ''}`,
     );
     showNotice(
-      review.followUpAt
+      nextStep === 'needed'
         ? 'Review saved on this device. The follow-up visit will be scheduled when you reconnect.'
         : 'Review saved on this device. It will sync when you reconnect.',
       'success',
@@ -273,7 +338,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     return true;
   };
 
-  const submitReview = async () => {
+  const submitReview = async (nextStep: 'needed' | 'complete' | null) => {
     if (!session || !selectedReport || !review) return null;
     if (reportIsCompleteWithoutVisit(selectedReport)) {
       showNotice('This report is complete and locked for editing.', 'info');
@@ -286,22 +351,47 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       );
       return null;
     }
+    if (nextStep === null) {
+      showNotice('Choose whether this report needs a follow-up visit or is complete.', 'error');
+      return null;
+    }
+    if (nextStep === 'needed' && review.verificationStatus === 'No detection') {
+      showNotice('A no-detection decision must complete the report.', 'error');
+      return null;
+    }
+    if (nextStep === 'complete' && review.verificationStatus === 'For verification') {
+      showNotice('Choose Confirmed or No detection before completing this report.', 'error');
+      return null;
+    }
+    if (review.verificationStatus === 'Confirmed' && !['Mild', 'Moderate', 'Severe', 'Highly severe'].includes(review.sraSeverity)) {
+      showNotice('Choose an SRA-assessed severity for a confirmed report.', 'error');
+      return null;
+    }
+    if (review.verificationStatus === 'No detection' && !review.reviewerNote.trim()) {
+      showNotice('Add a reviewer message before completing a no-detection report.', 'error');
+      return null;
+    }
+    if (nextStep === 'needed' && !review.followUpAt.trim()) {
+      showNotice('Choose a follow-up date before saving this review.', 'error');
+      return null;
+    }
     const followUpAt = review.followUpAt.trim();
     if (followUpAt && !/^\d{4}-\d{2}-\d{2}$/.test(followUpAt)) {
       showNotice('Enter the follow-up date as YYYY-MM-DD.', 'error');
       return null;
     }
     if (!online) {
-      return (await queueReviewLocally()) ? 'reports' : null;
+      if (!(await queueReviewLocally(nextStep))) return null;
+      return nextStep === 'needed' ? 'upcoming' : 'completed';
     }
     setReviewBusy(true);
     try {
-      const response = await apiRequest<{ data: FieldReport }>(
+      const response = await apiRequest<{ data: FieldReport; visit?: StaffVisit | null }>(
         `/staff/reports/${selectedReport.id}/review`,
         session.token,
         {
           method: 'PUT',
-          body: JSON.stringify(reviewPayload(review)),
+          body: JSON.stringify(reviewPayload(review, nextStep)),
         },
       );
       setSelectedReport(response.data);
@@ -310,6 +400,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
           item.id === response.data.id ? response.data : item,
         ),
       );
+      mergeReviewVisit(response.visit);
       setReview({
         verificationStatus: response.data.verification_status,
         sraSeverity: response.data.sra_severity || 'Not assessed',
@@ -322,46 +413,25 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         leafWidthCm: response.data.sra_crop_assessment?.leaf_width_cm?.toString() || '',
         tillerCount: response.data.sra_crop_assessment?.tiller_count?.toString() || '',
       });
-      let followUpSyncFailed = false;
-      if (followUpAt || selectedReport.follow_up_at) {
-        setVisitBusy(true);
-        try {
-          const result = await syncFollowUpVisit(
-            selectedReport.id,
-            followUpAt,
-            session.token,
-            visits,
-          );
-          if (result.visit) {
-            setVisits(items =>
-              result.created
-                ? [result.visit as StaffVisit, ...items]
-                : items.map(item =>
-                    item.id === result.visit?.id ? result.visit : item,
-                  ),
-            );
-            if (result.created) setVisitTotal(total => total + 1);
-          }
-        } catch {
-          followUpSyncFailed = true;
-        } finally {
-          setVisitBusy(false);
-        }
-      }
-      if (!followUpSyncFailed) {
-        showNotice(
-          followUpAt
-            ? 'Review saved and follow-up visit scheduled.'
-            : 'Review saved to the RSSI workspace.',
-          'success',
-        );
-      }
+      showNotice(
+        response.data.follow_up_at
+          ? 'Review saved and follow-up visit scheduled.'
+          : response.data.review_completed_at
+          ? 'Review saved and marked complete.'
+          : 'Review saved to the RSSI workspace.',
+        'success',
+      );
       void refreshData();
-      return followUpAt && !followUpSyncFailed ? 'visits' : 'reports';
+      return response.data.follow_up_at
+        ? 'visits'
+        : response.data.review_completed_at
+        ? 'completed'
+        : 'reports';
     } catch (error) {
       if (error instanceof ApiError && error.status === 0) {
         setOnline(false);
-        return (await queueReviewLocally()) ? 'reports' : null;
+        if (!(await queueReviewLocally(nextStep))) return null;
+        return nextStep === 'needed' ? 'upcoming' : 'completed';
       }
       showNotice(
         error instanceof Error ? error.message : 'Review could not be saved.',
@@ -445,7 +515,71 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       cropCharacteristics?: CropCharacteristics;
     },
   ): Promise<StaffVisit | null> => {
-    if (!session?.token || !online) return null;
+    if (!session) return null;
+    const report = reports.find(item => item.id === reportId);
+    if (!report) {
+      showNotice('Load the linked report before scheduling its visit offline.', 'error');
+      return null;
+    }
+    const now = new Date().toISOString();
+    const localVisit: StaffVisit = {
+      id: -(Date.now() * 1000 + Math.floor(Math.random() * 1000)),
+      report_id: report.id,
+      property_id: report.property_id ?? null,
+      report_code: report.code,
+      property_name: report.property_name,
+      farmer_name: report.farmer?.name || 'Farmer',
+      province: report.province,
+      municipality: report.municipality,
+      scheduled_at: `${values.scheduledAt}T00:00:00+08:00`,
+      completed_at: null,
+      status: 'scheduled',
+      visit_findings: values.visitFindings || null,
+      crop_characteristics: values.cropCharacteristics || {
+        leavesPerStalk: null,
+        plantHeight: null,
+        leafLength: null,
+        leafWidth: null,
+        tillers: null,
+      },
+      staff_name: session.user.name,
+      completed_by_name: null,
+      checkings: values.checkings.map((item, index) => ({
+        id: -(index + 1),
+        label: item.label,
+        result: item.result,
+        finding: item.finding || null,
+      })),
+      created_at: now,
+      updated_at: now,
+      sync_state: 'pending',
+    };
+    const payload: PendingVisitChange['payload'] = {
+      status: 'scheduled',
+      scheduledAt: values.scheduledAt,
+      visitFindings: values.visitFindings,
+      checkings: values.checkings,
+      cropCharacteristics: values.cropCharacteristics || {
+        leavesPerStalk: null,
+        plantHeight: null,
+        leafLength: null,
+        leafWidth: null,
+        tillers: null,
+      },
+    };
+    if (!online || pendingVisitChanges.some(item => item.kind === 'create' && item.reportId === reportId)) {
+      const alreadyScheduled = pendingVisitChanges.find(
+        item => item.kind === 'create' && item.reportId === reportId,
+      );
+      if (alreadyScheduled) {
+        showNotice('This report already has a visit waiting to sync.', 'info');
+        return alreadyScheduled.localVisit;
+      }
+      const queued = await queueVisitLocally('create', reportId, localVisit, payload, null);
+      if (queued) setVisitTotal(total => total + 1);
+      return queued;
+    }
+    if (!session.token) return null;
     setVisitBusy(true);
     try {
       const response = await apiRequest<{ data: StaffVisit }>(
@@ -458,6 +592,32 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       showNotice('Follow-up visit scheduled.', 'success');
       return response.data;
     } catch (error) {
+      if (error instanceof ApiError && (error.status === 0 || error.code === 'active_visit_exists')) {
+        let remoteVisit: StaffVisit | null = null;
+        if (error.code === 'active_visit_exists' && session.token) {
+          try {
+            const current = await apiRequest<ApiPage<StaffVisit>>(
+              '/staff/visits?status=scheduled&page=1&pageSize=50',
+              session.token,
+            );
+            remoteVisit = current.data.find(item => item.report_id === reportId) || null;
+          } catch {
+            // Keep the local plan available even if the conflict lookup fails.
+          }
+        }
+        const queued = await queueVisitLocally(
+          'create',
+          reportId,
+          localVisit,
+          payload,
+          null,
+          error.code === 'active_visit_exists'
+            ? { message: 'A scheduled visit already exists for this report.', remoteVisit }
+            : undefined,
+        );
+        if (queued) setVisitTotal(total => total + 1);
+        return queued;
+      }
       showNotice(
         error instanceof Error
           ? error.message
@@ -480,13 +640,61 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       cropCharacteristics: CropCharacteristics;
     },
   ): Promise<StaffVisit | null> => {
-    if (!session?.token || !online) return null;
+    if (!session) return null;
+    const visit = visits.find(item => item.id === visitId);
+    if (!visit) {
+      showNotice('This visit is not loaded on this device. Refresh while online before editing it.', 'error');
+      return null;
+    }
+    const existingChange = pendingVisitChanges.find(item =>
+      visitId < 0 ? item.localVisit.id === visitId : item.visitId === visitId,
+    );
+    const payload: PendingVisitChange['payload'] = {
+      ...values,
+      checkings: values.checkings.map(item => ({ ...item })),
+    };
+    const now = new Date().toISOString();
+    const localVisit: StaffVisit = {
+      ...visit,
+      scheduled_at: `${values.scheduledAt}T00:00:00+08:00`,
+      completed_at: values.status === 'completed' ? now : null,
+      status: values.status,
+      visit_findings: values.visitFindings || null,
+      crop_characteristics: values.cropCharacteristics,
+      completed_by_name: values.status === 'completed' ? session.user.name : null,
+      checkings: values.checkings.map((item, index) => ({
+        id: visit.checkings[index]?.id ?? -(index + 1),
+        label: item.label,
+        result: item.result,
+        finding: item.finding || null,
+      })),
+      updated_at: now,
+      sync_state: 'pending',
+    };
+    if (!online || existingChange || visitId < 0) {
+      return queueVisitLocally(
+        existingChange?.kind || 'update',
+        visit.report_id,
+        localVisit,
+        payload,
+        existingChange?.expectedUpdatedAt ?? (visitId > 0 ? visit.updated_at : null),
+        undefined,
+        existingChange?.baseVisit ?? visit,
+      );
+    }
+    if (!session.token) return null;
     setVisitBusy(true);
     try {
       const response = await apiRequest<{ data: StaffVisit }>(
         `/staff/visits/${visitId}`,
         session.token,
-        { method: 'PUT', body: JSON.stringify(values) },
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            ...visitPayloadForApi(values),
+            expectedUpdatedAt: visit.updated_at,
+          }),
+        },
       );
       setVisits(items =>
         items.map(item => (item.id === visitId ? response.data : item)),
@@ -501,6 +709,20 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       );
       return response.data;
     } catch (error) {
+      if (error instanceof ApiError && (error.status === 0 || error.code === 'visit_conflict')) {
+        const remoteVisit = error.payload?.data as StaffVisit | undefined;
+        return queueVisitLocally(
+          'update',
+          visit.report_id,
+          localVisit,
+          payload,
+          visit.updated_at,
+          error.code === 'visit_conflict'
+            ? { message: error.message, remoteVisit: remoteVisit || null }
+            : undefined,
+          visit,
+        );
+      }
       showNotice(
         error instanceof Error
           ? error.message
@@ -522,11 +744,14 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
             ? report.verification_status === 'Confirmed'
             : listFilter === 'Reviewed'
             ? reportHasReview(report) &&
-              !['Confirmed', 'No detection'].includes(
-                report.verification_status,
-              )
+              !reportIsCompleteWithoutVisit(report) &&
+              report.verification_status !== 'Confirmed'
             : listFilter === 'Needs review' || listFilter === 'For verification'
-            ? !reportHasReview(report)
+            ? reportWorkflowStage(report) === 'needs_review'
+            : listFilter === 'Upcoming'
+            ? !reportIsCompleteWithoutVisit(report) && Boolean(report.follow_up_at)
+            : listFilter === 'Completed'
+            ? reportIsCompleteWithoutVisit(report)
             : report.verification_status === listFilter);
         const query = search.trim().toLocaleLowerCase();
         const matchesSearch =

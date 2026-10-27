@@ -4,14 +4,14 @@ import {
   useStaffRecordActions,
   type LoadMoreKind,
 } from './useStaffRecordActions';
-import { syncFollowUpVisit } from './followUpVisits';
 import { reviewFromReport, reviewPayload } from './reportReview';
+import { visitPayloadForApi } from './visitPayload';
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import {
   clearReportPhoneNotifications,
   listenForReportNotificationPress,
-  notifyNewReport,
+  notifyStaffUpdate,
   preparePhoneNotifications,
   syncVisitReminders,
 } from './phoneNotifications';
@@ -29,12 +29,17 @@ import {
 } from '../types';
 import {
   AppNotification,
+  PendingVisitChange,
   readNotifications,
   readPendingReviews,
+  readPendingVisitChanges,
   readWorkspace,
   saveNotifications,
   savePendingReviews,
+  savePendingVisitChanges,
   saveWorkspace,
+  readNotificationEventCursor,
+  saveNotificationEventCursor,
 } from '../offlineStore';
 
 export type Tab =
@@ -44,6 +49,17 @@ export type Tab =
   | 'visits'
   | 'farmers'
   | 'settings';
+
+function withPendingVisits(
+  serverVisits: StaffVisit[],
+  changes: PendingVisitChange[],
+): StaffVisit[] {
+  const pending = [...changes]
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+    .map(change => ({ ...change.localVisit, sync_state: change.state }));
+  const pendingIds = new Set(pending.map(visit => visit.id));
+  return [...pending, ...serverVisits.filter(visit => !pendingIds.has(visit.id))];
+}
 
 export function useStaffAppController() {
   const [session, setSession] = useState<StaffSession | null>(null);
@@ -63,6 +79,7 @@ export function useStaffAppController() {
   const [reportPage, setReportPage] = useState(1);
   const [farmerPage, setFarmerPage] = useState(1);
   const [visits, setVisits] = useState<StaffVisit[]>([]);
+  const [pendingVisitChanges, setPendingVisitChanges] = useState<PendingVisitChange[]>([]);
   const [visitTotal, setVisitTotal] = useState(0);
   const [visitPage, setVisitPage] = useState(1);
   const [visitBusy, setVisitBusy] = useState(false);
@@ -91,8 +108,11 @@ export function useStaffAppController() {
     async () => undefined,
   );
   const refreshInFlightRef = useRef(false);
+  const visitOutboxSyncInFlightRef = useRef(false);
   const lastAutomaticRefreshAtRef = useRef(0);
-  const seenReportIdsRef = useRef<Set<number> | null>(null);
+  const notificationEventCursorRef = useRef<number | null>(null);
+  const notificationCursorUserRef = useRef<number | null>(null);
+  const processedNotificationKeysRef = useRef(new Set<string>());
   const selectedReportRef = useRef<FieldReport | null>(null);
   const reviewRef = useRef<ReviewForm | null>(null);
   const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,11 +125,13 @@ export function useStaffAppController() {
   const pendingNotificationKey = 'rssi_staff_pending_report_open';
 
   const hydrateLocalData = useCallback(async (active: StaffSession) => {
-    const [snapshot, queue, savedNotifications] = await Promise.all([
+    const [snapshot, queue, visitQueue, savedNotifications] = await Promise.all([
       readWorkspace(active.user.id),
       readPendingReviews(active.user.id),
+      readPendingVisitChanges(active.user.id),
       readNotifications(active.user.id),
     ]);
+    setPendingVisitChanges(visitQueue);
     if (snapshot) {
       const pendingIds = new Set(queue.map(item => item.reportId));
       setReports(
@@ -129,8 +151,8 @@ export function useStaffAppController() {
           ) ??
           0,
       );
-      setVisits(snapshot.visits || []);
-      setVisitTotal(snapshot.visitTotal || 0);
+      setVisits(withPendingVisits(snapshot.visits || [], visitQueue));
+      setVisitTotal((snapshot.visitTotal || 0) + visitQueue.filter(item => item.kind === 'create').length);
       setVisitPage(snapshot.visitPage || 1);
       setReportTotal(snapshot.reportTotal || 0);
       setFarmerTotal(snapshot.farmerTotal || 0);
@@ -153,6 +175,7 @@ export function useStaffAppController() {
         return report ? { ...item, reportId: report.id } : item;
       });
     setNotifications(reportNotifications);
+    processedNotificationKeysRef.current = new Set(reportNotifications.map(item => item.id));
     if (reportNotifications.length !== savedNotifications.length) {
       void saveNotifications(active.user.id, reportNotifications);
     } else if (
@@ -166,10 +189,12 @@ export function useStaffAppController() {
   }, []);
 
   const addNotification = useCallback(
-    (title: string, message: string, reportId?: number) => {
-      if (!session) return;
+    (title: string, message: string, reportId?: number, stableKey?: string) => {
+      if (!session) return false;
+      if (stableKey && processedNotificationKeysRef.current.has(stableKey)) return false;
+      if (stableKey) processedNotificationKeysRef.current.add(stableKey);
       const item: AppNotification = {
-        id: `${Date.now()}-${Math.random()}`,
+        id: stableKey || `${Date.now()}-${Math.random()}`,
         title,
         message,
         createdAt: new Date().toISOString(),
@@ -181,6 +206,7 @@ export function useStaffAppController() {
         void saveNotifications(session.user.id, next);
         return next;
       });
+      return true;
     },
     [session],
   );
@@ -225,6 +251,9 @@ export function useStaffAppController() {
       }
       await clearSession().catch(() => undefined);
       setSession(null);
+      notificationEventCursorRef.current = null;
+      notificationCursorUserRef.current = null;
+      processedNotificationKeysRef.current.clear();
       setReports([]);
       setFarmers([]);
       setMapLocations([]);
@@ -266,10 +295,18 @@ export function useStaffAppController() {
     let synced = 0;
     for (const item of queue) {
       try {
-        const result = await apiRequest<{ data: FieldReport }>(
+        const result = await apiRequest<{ data: FieldReport; visit?: StaffVisit | null }>(
           `/staff/reports/${item.reportId}/review`,
           session.token,
-          { method: 'PUT', body: JSON.stringify(reviewPayload(item.review)) },
+          {
+            method: 'PUT',
+            body: JSON.stringify(
+              reviewPayload(
+                item.review,
+                item.nextStep || (item.review.followUpAt ? 'needed' : 'complete'),
+              ),
+            ),
+          },
         );
         setReports(current =>
           current.map(report =>
@@ -279,22 +316,17 @@ export function useStaffAppController() {
         setSelectedReport(current =>
           current?.id === item.reportId ? result.data : current,
         );
-        if (item.review.followUpAt || item.previousFollowUpAt) {
-          const followUp = await syncFollowUpVisit(
-            item.reportId,
-            item.review.followUpAt,
-            session.token,
-            visits,
+        if (result.visit) {
+          const visitWasLoaded = visits.some(visit => visit.id === result.visit?.id);
+          setVisits(current =>
+            visitWasLoaded
+              ? current.map(visit => visit.id === result.visit?.id ? result.visit as StaffVisit : visit)
+              : result.visit?.status === 'scheduled'
+              ? [result.visit as StaffVisit, ...current]
+              : current,
           );
-          if (followUp.visit) {
-            setVisits(current =>
-              followUp.created
-                ? [followUp.visit as StaffVisit, ...current]
-                : current.map(visit =>
-                    visit.id === followUp.visit?.id ? followUp.visit : visit,
-                  ),
-            );
-            if (followUp.created) setVisitTotal(total => total + 1);
+          if (!visitWasLoaded && result.visit.status === 'scheduled') {
+            setVisitTotal(total => total + 1);
           }
         }
         remaining = remaining.filter(
@@ -321,6 +353,144 @@ export function useStaffAppController() {
     }
   }, [addNotification, online, session, visits]);
 
+  const flushPendingVisitChanges = useCallback(async () => {
+    if (!session?.token || !online) return;
+    if (visitOutboxSyncInFlightRef.current) return;
+    visitOutboxSyncInFlightRef.current = true;
+    try {
+    const queue = await readPendingVisitChanges(session.user.id);
+    if (!queue.length) {
+      setPendingVisitChanges([]);
+      return;
+    }
+    const remaining = [...queue];
+    const syncedLocalIds: number[] = [];
+    const syncedVisits: StaffVisit[] = [];
+    let synced = 0;
+    for (const change of queue) {
+      if (change.state === 'conflict') continue;
+      let currentChange = change;
+      try {
+        let response: { data: StaffVisit };
+        if (currentChange.kind === 'create') {
+          const payload = visitPayloadForApi(currentChange.payload);
+          const created = await apiRequest<{ data: StaffVisit }>(
+              `/staff/reports/${change.reportId}/visits`,
+              session.token,
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  scheduledAt: payload.scheduledAt,
+                  visitFindings: payload.visitFindings,
+                  checkings: payload.checkings,
+                  cropCharacteristics: payload.cropCharacteristics,
+                }),
+              },
+            );
+          response = created;
+          if (currentChange.payload.status !== 'scheduled') {
+            currentChange = {
+              ...currentChange,
+              kind: 'update',
+              visitId: created.data.id,
+              expectedUpdatedAt: created.data.updated_at,
+              baseVisit: created.data,
+              localVisit: {
+                ...currentChange.localVisit,
+                id: created.data.id,
+                sync_state: 'pending',
+              },
+            };
+            const index = remaining.findIndex(item => item.id === change.id);
+            if (index >= 0) remaining[index] = currentChange;
+            await savePendingVisitChanges(session.user.id, remaining);
+            setPendingVisitChanges(remaining);
+            response = await apiRequest<{ data: StaffVisit }>(
+              `/staff/visits/${created.data.id}`,
+              session.token,
+              {
+                method: 'PUT',
+                body: JSON.stringify({
+                  ...visitPayloadForApi(currentChange.payload),
+                  expectedUpdatedAt: currentChange.expectedUpdatedAt,
+                }),
+              },
+            );
+          }
+        } else {
+          response = await apiRequest<{ data: StaffVisit }>(
+            `/staff/visits/${currentChange.visitId}`,
+            session.token,
+            {
+              method: 'PUT',
+              body: JSON.stringify({
+                ...visitPayloadForApi(currentChange.payload),
+                expectedUpdatedAt: currentChange.expectedUpdatedAt,
+              }),
+            },
+          );
+        }
+        remaining.splice(remaining.findIndex(item => item.id === change.id), 1);
+        syncedLocalIds.push(change.localVisit.id);
+        syncedVisits.push(response.data);
+        synced += 1;
+      } catch (error) {
+        if (!(error instanceof ApiError)) break;
+        if (error.status === 0 || error.status >= 500) break;
+
+        let remoteVisit = error.payload?.data as StaffVisit | undefined;
+        if (error.code === 'active_visit_exists' && !remoteVisit) {
+          try {
+            const current = await apiRequest<ApiPage<StaffVisit>>(
+              '/staff/visits?status=scheduled&page=1&pageSize=50',
+              session.token,
+            );
+            remoteVisit = current.data.find(item => item.report_id === change.reportId);
+          } catch {
+            // Keep the conflict visible even if the current server version cannot be loaded.
+          }
+        }
+        const index = remaining.findIndex(item => item.id === change.id);
+        if (index >= 0) {
+          remaining[index] = {
+            ...currentChange,
+            state: 'conflict',
+            conflictMessage: error.message,
+            remoteVisit: remoteVisit || null,
+            localVisit: { ...currentChange.localVisit, sync_state: 'conflict' },
+          };
+        }
+      }
+    }
+    await savePendingVisitChanges(session.user.id, remaining);
+    setPendingVisitChanges(remaining);
+    setVisits(current =>
+      withPendingVisits(
+        [
+          ...current.filter(visit =>
+            !syncedLocalIds.includes(visit.id) &&
+            !syncedVisits.some(saved => saved.id === visit.id),
+          ),
+          ...syncedVisits,
+        ],
+        remaining,
+      ),
+    );
+    if (synced) {
+      addNotification(
+        'Offline visits synced',
+        `${synced} visit change${synced === 1 ? '' : 's'} saved to the RSSI workspace.`,
+      );
+      showNotice(
+        `${synced} offline visit change${synced === 1 ? '' : 's'} synced.`,
+        'success',
+      );
+    }
+    } finally {
+      visitOutboxSyncInFlightRef.current = false;
+    }
+  }, [addNotification, online, session, showNotice]);
+
   const refreshData = useCallback(
     async (showSpinner = true) => {
       if (!session?.token || refreshInFlightRef.current) return;
@@ -343,6 +513,7 @@ export function useStaffAppController() {
         };
         const token = session.token;
         await flushPendingReviews();
+        await flushPendingVisitChanges();
         const tasks = await Promise.allSettled([
           apiRequest<ApiPage<FieldReport>>(
             '/staff/reports?page=1&pageSize=50',
@@ -369,7 +540,6 @@ export function useStaffAppController() {
         const reportResult = tasks[0];
         if (reportResult.status === 'fulfilled') {
           const freshReports = reportResult.value.data || [];
-          const currentIds = new Set(freshReports.map(item => item.id));
           setNotifications(current => {
             let changed = false;
             const linked = current.map(item => {
@@ -385,20 +555,6 @@ export function useStaffAppController() {
               void saveNotifications(session.user.id, linked);
             return linked;
           });
-          const previouslySeen = seenReportIdsRef.current;
-          if (previouslySeen) {
-            freshReports
-              .filter(item => !previouslySeen.has(item.id))
-              .forEach(item => {
-                void notifyNewReport(item.code, item.id).catch(() => undefined);
-                addNotification(
-                  'New field report',
-                  `${item.code} has been submitted and is ready to review.`,
-                  item.id,
-                );
-              });
-          }
-          seenReportIdsRef.current = currentIds;
           setReports(freshReports);
           setReportTotal(
             reportResult.value.meta?.total ?? reportResult.value.data.length,
@@ -510,9 +666,12 @@ export function useStaffAppController() {
         const visitResult = tasks[4];
         if (visitResult.status === 'fulfilled') {
           const latestVisits = visitResult.value.data || [];
-          setVisits(latestVisits);
+          const queuedVisits = await readPendingVisitChanges(session.user.id);
+          setPendingVisitChanges(queuedVisits);
+          setVisits(withPendingVisits(latestVisits, queuedVisits));
           setVisitTotal(
-            visitResult.value.meta?.total ?? visitResult.value.data.length,
+            (visitResult.value.meta?.total ?? visitResult.value.data.length) +
+              queuedVisits.filter(item => item.kind === 'create').length,
           );
           setVisitPage(visitResult.value.meta?.page ?? 1);
         } else {
@@ -541,6 +700,7 @@ export function useStaffAppController() {
     },
     [
       flushPendingReviews,
+      flushPendingVisitChanges,
       online,
       addNotification,
       selectedFarmer,
@@ -551,6 +711,66 @@ export function useStaffAppController() {
     ],
   );
   refreshRef.current = refreshData;
+
+  const resolvePendingVisitChange = useCallback(
+    async (changeId: string, choice: 'keep_local' | 'use_server') => {
+      if (!session) return;
+      const queue = await readPendingVisitChanges(session.user.id);
+      const change = queue.find(item => item.id === changeId);
+      if (!change) return;
+      if (choice === 'keep_local' && !change.remoteVisit) {
+        showNotice('Load the current server visit before keeping these changes.', 'error');
+        return;
+      }
+
+      let next = queue.filter(item => item.id !== changeId);
+      let replacement: StaffVisit | null = null;
+      if (choice === 'keep_local') {
+        const remote = change.remoteVisit as StaffVisit;
+        const rebased: PendingVisitChange = {
+          ...change,
+          kind: 'update',
+          visitId: remote.id,
+          expectedUpdatedAt: remote.updated_at,
+          baseVisit: remote,
+          localVisit: {
+            ...change.localVisit,
+            id: remote.id,
+            sync_state: 'pending',
+          },
+          state: 'pending',
+          conflictMessage: undefined,
+          remoteVisit: null,
+          savedAt: new Date().toISOString(),
+        };
+        next = [...next, rebased];
+        replacement = rebased.localVisit;
+      } else {
+        replacement = change.remoteVisit || change.baseVisit || null;
+      }
+
+      await savePendingVisitChanges(session.user.id, next);
+      setPendingVisitChanges(next);
+      setVisits(current => {
+        const cleaned = current.filter(
+          visit => visit.id !== change.localVisit.id &&
+            (change.visitId === null || visit.id !== change.visitId),
+        );
+        return withPendingVisits(
+          replacement ? [replacement, ...cleaned] : cleaned,
+          next,
+        );
+      });
+      if (choice === 'keep_local') {
+        showNotice('Your version is queued to sync against the current server visit.', 'info');
+        if (online) await refreshData(false);
+      } else {
+        showNotice('The server version is now shown on this device.', 'success');
+        if (online) await refreshData(false);
+      }
+    },
+    [online, refreshData, session, showNotice],
+  );
 
   const requestAutomaticRefresh = useCallback(() => {
     if (!session?.token) return;
@@ -638,10 +858,7 @@ export function useStaffAppController() {
   }, [cacheReady, session?.user.id, visits]);
 
   useEffect(() => {
-    if (!session?.token) {
-      seenReportIdsRef.current = null;
-      return;
-    }
+    if (!session?.token) return;
     let pollInFlight = false;
     const pollReports = async () => {
       if (
@@ -653,6 +870,7 @@ export function useStaffAppController() {
         return;
       pollInFlight = true;
       try {
+        await flushPendingVisitChanges();
         const [
           reportsResponse,
           pendingResponse,
@@ -691,22 +909,42 @@ export function useStaffAppController() {
             // The report list remains usable if a selected detail cannot refresh.
           }
         }
-        const previous = seenReportIdsRef.current;
-        if (previous) {
-          latest
-            .filter(report => !previous.has(report.id))
-            .forEach(report => {
-              void notifyNewReport(report.code, report.id).catch(
-                () => undefined,
-              );
-              addNotification(
-                'New field report',
-                `${report.code} has been submitted and is ready to review.`,
-                report.id,
-              );
-            });
+        try {
+          if (notificationCursorUserRef.current !== session.user.id) {
+            notificationEventCursorRef.current = await readNotificationEventCursor(session.user.id);
+            notificationCursorUserRef.current = session.user.id;
+          }
+          const currentCursor = notificationEventCursorRef.current;
+          const path = currentCursor === null
+            ? '/staff/notifications'
+            : `/staff/notifications?afterId=${encodeURIComponent(String(currentCursor))}`;
+          const feed = await apiRequest<{
+            cursor: number;
+            events: Array<{ id: number; title: string; message: string; reportId: number }>;
+            overdueVisits: Array<{ id: number; reportId: number; title: string; message: string; scheduledAt: string }>;
+          }>(path, session.token);
+          if (currentCursor !== null) {
+            for (const event of feed.events || []) {
+              const key = `event-${event.id}`;
+              if (addNotification(event.title, event.message, event.reportId, key)) {
+                void notifyStaffUpdate(key, event.title, event.message, event.reportId).catch(() => undefined);
+              }
+            }
+          }
+          for (const visit of feed.overdueVisits || []) {
+            const key = `overdue-visit-${visit.id}-${visit.scheduledAt.slice(0, 10)}`;
+            if (addNotification(visit.title, visit.message, visit.reportId, key)) {
+              void notifyStaffUpdate(key, visit.title, visit.message, visit.reportId).catch(() => undefined);
+            }
+          }
+          const nextCursor = Number(feed.cursor);
+          if (Number.isSafeInteger(nextCursor) && nextCursor >= 0) {
+            notificationEventCursorRef.current = nextCursor;
+            await saveNotificationEventCursor(session.user.id, nextCursor);
+          }
+        } catch {
+          // Update notifications are best-effort and never block report refresh.
         }
-        seenReportIdsRef.current = new Set(latest.map(report => report.id));
         setReports(latest);
         setReportTotal(reportsResponse.meta?.total ?? latest.length);
         setPendingTotal(pendingResponse.meta?.total ?? 0);
@@ -735,8 +973,13 @@ export function useStaffAppController() {
               0,
             ),
         );
-        setVisits(visitsResponse.data || []);
-        setVisitTotal(visitsResponse.meta?.total ?? visitsResponse.data.length);
+        const queuedVisits = await readPendingVisitChanges(session.user.id);
+        setPendingVisitChanges(queuedVisits);
+        setVisits(withPendingVisits(visitsResponse.data || [], queuedVisits));
+        setVisitTotal(
+          (visitsResponse.meta?.total ?? visitsResponse.data.length) +
+            queuedVisits.filter(item => item.kind === 'create').length,
+        );
         setVisitPage(visitsResponse.meta?.page ?? 1);
       } catch {
         // Normal refresh handles visible errors; polling stays quiet.
@@ -746,7 +989,7 @@ export function useStaffAppController() {
     };
     const timer = setInterval(() => void pollReports(), 30_000);
     return () => clearInterval(timer);
-  }, [addNotification, online, session?.token]);
+  }, [addNotification, flushPendingVisitChanges, online, session?.token, session?.user.id]);
 
   useEffect(() => {
     if (!session || !cacheReady) return;
@@ -840,6 +1083,8 @@ export function useStaffAppController() {
     setFarmers,
     visits,
     setVisits,
+    pendingVisitChanges,
+    setPendingVisitChanges,
     selectedReport,
     setSelectedReport,
     selectedFarmer,
@@ -992,6 +1237,8 @@ export function useStaffAppController() {
     loadMore,
     createVisit,
     updateVisit,
+    pendingVisitChanges,
+    resolvePendingVisitChange,
     filteredReports,
     filteredFarmers,
     canReview,

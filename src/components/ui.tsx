@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Farmer, FieldReport } from '../types';
 import { formatDate, initials, severityStyle, shortProvince } from '../utils';
+import { reportWorkflowLabel, reportWorkflowTone } from '../app/reportReview';
 export function MetricCard({ label, value, hint, tone, styles, onPress }: any) {
   const toneStyle = (
     {
@@ -107,10 +108,7 @@ export function Choice({ label, selected, onPress, styles, disabled }: any) {
 
 export function ReportRow({ report, onPress, styles, compact }: any) {
   const severity = severityStyle(report.farmer_severity, styles);
-  const status =
-    report.verification_status === 'For verification'
-      ? 'Pending review'
-      : report.verification_status;
+  const workflowLabel = reportWorkflowLabel(report);
   return (
     <Pressable onPress={onPress} style={styles.reportRow}>
       <View style={[styles.reportIcon, severity]}>
@@ -120,14 +118,8 @@ export function ReportRow({ report, onPress, styles, compact }: any) {
         <View style={styles.rowBetween}>
           <Text style={styles.reportCode}>{report.code}</Text>
           <Badge
-            label={status}
-            tone={
-              report.verification_status === 'For verification'
-                ? 'amber'
-                : report.verification_status === 'Confirmed'
-                ? 'green'
-                : 'muted'
-            }
+            label={workflowLabel}
+            tone={reportWorkflowTone(report)}
             styles={styles}
           />
         </View>

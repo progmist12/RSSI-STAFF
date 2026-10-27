@@ -1,8 +1,58 @@
 import { FieldReport, ReviewForm } from '../types';
 
 export function reportIsCompleteWithoutVisit(report: FieldReport) {
-  if (report.verification_status === 'No detection') return true;
-  return report.verification_status === 'Confirmed' && !report.follow_up_at;
+  if (report.review_completed_at) return true;
+  if (report.workflow_stage) return report.workflow_stage === 'completed';
+  return (
+    ['Confirmed', 'No detection'].includes(report.verification_status) &&
+    !report.follow_up_at
+  );
+}
+
+export function reportHasReview(report: FieldReport) {
+  const crop = report.sra_crop_assessment;
+  return Boolean(
+    report.verification_status !== 'For verification' ||
+      report.sra_severity ||
+      report.assessment_rationale?.trim() ||
+      report.reviewer_note?.trim() ||
+      report.follow_up_at ||
+      crop?.plant_height_cm != null ||
+      crop?.leaves_per_stalk != null ||
+      crop?.leaf_length_cm != null ||
+      crop?.leaf_width_cm != null ||
+      crop?.tiller_count != null,
+  );
+}
+
+export function reportWorkflowStage(report: FieldReport) {
+  if (report.workflow_stage) return report.workflow_stage;
+  if (reportIsCompleteWithoutVisit(report)) return 'completed';
+  if (report.follow_up_at) return 'upcoming';
+  if (!reportHasReview(report)) return 'needs_review';
+  if (report.verification_status === 'Confirmed') return 'confirmed';
+  return 'reviewed';
+}
+
+export function reportWorkflowLabel(report: FieldReport) {
+  return (
+    {
+      needs_review: 'Needs review',
+      reviewed: 'Reviewed',
+      confirmed: 'Confirmed',
+      upcoming: 'Upcoming',
+      completed: 'Completed',
+    } as const
+  )[reportWorkflowStage(report)];
+}
+
+export function reportWorkflowTone(report: FieldReport) {
+  const stage = reportWorkflowStage(report);
+  return stage === 'needs_review'
+    ? 'amber'
+    : stage === 'confirmed' || stage === 'completed'
+    ? 'green'
+    : 'blue';
 }
 
 export function reviewFromReport(report: FieldReport): ReviewForm {
@@ -20,8 +70,9 @@ export function reviewFromReport(report: FieldReport): ReviewForm {
   };
 }
 
-export function reviewPayload(review: ReviewForm) {
+export function reviewPayload(review: ReviewForm, nextStep: 'needed' | 'complete') {
   return {
+    nextStep,
     verificationStatus: review.verificationStatus,
     sraSeverity: review.sraSeverity || 'Not assessed',
     assessmentRationale: review.assessmentRationale.trim() || null,

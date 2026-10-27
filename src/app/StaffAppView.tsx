@@ -90,7 +90,7 @@ const helpSections: Partial<
   visits: {
     title: 'Visit history',
     description:
-      'Each visit belongs to a farmer report. Record what staff checked and found during the visit. Farmer observations and SRA assessments remain separate. Scheduled visits can be updated, completed, or cancelled while online.',
+      'Each visit belongs to a farmer report. Record checks and findings offline; queued changes sync when the connection returns. Resolve any server conflicts before the visit is finalized.',
   },
   farmers: {
     title: 'Farmer directory',
@@ -145,6 +145,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     setNotificationOpen,
     notifications,
     pendingReviewCount,
+    pendingVisitChanges,
     markNotificationsRead,
     refreshData,
     signOut,
@@ -155,6 +156,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     loadMore,
     createVisit,
     updateVisit,
+    resolvePendingVisitChange,
     filteredReports,
     filteredFarmers,
     canReview,
@@ -199,8 +201,8 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     },
     [setTab, tab],
   );
-  const saveReviewAndNavigate = useCallback(async () => {
-    const destination = await submitReview();
+  const saveReviewAndNavigate = useCallback(async (nextStep: 'needed' | 'complete' | null) => {
+    const destination = await submitReview(nextStep);
     if (!destination) return;
 
     setSelectedReport(null);
@@ -208,6 +210,18 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     setSearch('');
     if (destination === 'visits') {
       navigateToTab('visits');
+      return;
+    }
+
+    if (destination === 'completed') {
+      setListFilter('Completed');
+      navigateToTab('reports');
+      return;
+    }
+
+    if (destination === 'upcoming') {
+      setListFilter('Upcoming');
+      navigateToTab('reports');
       return;
     }
 
@@ -233,7 +247,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     navigateToTab('reports');
   }, [
     navigateToTab,
-    review?.verificationStatus,
+    review,
     setListFilter,
     setSearch,
     setSelectedFarmer,
@@ -578,6 +592,9 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
                     pendingReviewCount === 1 ? '' : 's'
                   } waiting to sync`
                 : ''}
+              {pendingVisitChanges.length
+                ? ` · ${pendingVisitChanges.length} visit change${pendingVisitChanges.length === 1 ? '' : 's'} waiting to sync`
+                : ''}
             </Text>
           </View>
         )}
@@ -730,6 +747,8 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
                 onLoadMore={loadMore}
                 onCreateVisit={createVisit}
                 onUpdateVisit={updateVisit}
+                pendingVisitChanges={pendingVisitChanges}
+                onResolveVisitChange={resolvePendingVisitChange}
                 onOpenReport={openReportFromCurrentTab}
                 onHistoryBackHandlerChange={registerFarmHistoryBackHandler}
                 historyRequest={farmHistoryRequest}

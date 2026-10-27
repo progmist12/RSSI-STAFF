@@ -19,6 +19,7 @@ const messages: Record<string, string> = {
   forbidden: 'Your staff account does not have permission for this action.',
   report_not_found: 'This report is no longer available.',
   server_unavailable: 'The RSSI service could not be reached. Check your connection and try again.',
+  server_error: 'The server had a problem loading this information. Please try again shortly.',
   invalid_follow_up_date: 'Enter the follow-up date as YYYY-MM-DD.',
   invalid_visit_date: 'Enter the visit date using YYYY-MM-DD.',
   invalid_visit_checkings: 'One or more visit checks have invalid details.',
@@ -31,8 +32,20 @@ const messages: Record<string, string> = {
 async function decode<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    const code = typeof body.error === 'string' ? body.error : `http_${response.status}`;
-    const message = typeof body.message === 'string' ? body.message : messages[code] || code.replaceAll('_', ' ');
+    // Avoid showing raw framework/database errors (or the unhelpful "http 500")
+    // to staff. A 5xx response means the server received the request but failed
+    // while processing it; it is distinct from a network connection failure.
+    const serverError = response.status >= 500;
+    const code = serverError
+      ? 'server_error'
+      : typeof body.error === 'string'
+        ? body.error
+        : `http_${response.status}`;
+    const message = serverError
+      ? messages.server_error
+      : typeof body.message === 'string'
+        ? body.message
+        : messages[code] || code.replaceAll('_', ' ');
     throw new ApiError(response.status, code, message);
   }
   return body as T;

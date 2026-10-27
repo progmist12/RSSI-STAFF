@@ -95,6 +95,7 @@ export function useStaffAppController() {
   const seenReportIdsRef = useRef<Set<number> | null>(null);
   const selectedReportRef = useRef<FieldReport | null>(null);
   const reviewRef = useRef<ReviewForm | null>(null);
+  const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   selectedReportRef.current = selectedReport;
   reviewRef.current = review;
   const baseOpenReportRef = useRef<(report: FieldReport | number) => Promise<boolean>>(
@@ -194,8 +195,20 @@ export function useStaffAppController() {
 
   const showNotice = useCallback(
     (message: string, kind: 'error' | 'success' | 'info' = 'info') => {
+      if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
       setNotice(message);
       setNoticeKind(kind);
+      noticeTimeoutRef.current = setTimeout(() => {
+        setNotice(current => (current === message ? '' : current));
+        noticeTimeoutRef.current = null;
+      }, 2000);
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
     },
     [],
   );
@@ -317,6 +330,9 @@ export function useStaffAppController() {
         const failedRequests: string[] = [];
         const describeFailure = (label: string, reason: unknown) => {
           if (reason instanceof ApiError) {
+            if (reason.status >= 500) {
+              return `${label}: ${reason.message}`;
+            }
             return reason.status
               ? `${label} (HTTP ${reason.status}): ${reason.message}`
               : `${label}: ${reason.message}`;
@@ -415,7 +431,12 @@ export function useStaffAppController() {
               currentReview.assessmentRationale ===
                 previousReview.assessmentRationale &&
               currentReview.reviewerNote === previousReview.reviewerNote &&
-              currentReview.followUpAt === previousReview.followUpAt;
+              currentReview.followUpAt === previousReview.followUpAt &&
+              currentReview.plantHeightCm === previousReview.plantHeightCm &&
+              currentReview.leavesPerStalk === previousReview.leavesPerStalk &&
+              currentReview.leafLengthCm === previousReview.leafLengthCm &&
+              currentReview.leafWidthCm === previousReview.leafWidthCm &&
+              currentReview.tillerCount === previousReview.tillerCount;
             if (reviewIsUnedited) setReview(reviewFromReport(refreshedReport));
             setSelectedReport(refreshedReport);
           }
@@ -686,7 +707,12 @@ export function useStaffAppController() {
             currentReview.sraSeverity === previousReview.sraSeverity &&
             currentReview.assessmentRationale === previousReview.assessmentRationale &&
             currentReview.reviewerNote === previousReview.reviewerNote &&
-            currentReview.followUpAt === previousReview.followUpAt;
+            currentReview.followUpAt === previousReview.followUpAt &&
+            currentReview.plantHeightCm === previousReview.plantHeightCm &&
+            currentReview.leavesPerStalk === previousReview.leavesPerStalk &&
+            currentReview.leafLengthCm === previousReview.leafLengthCm &&
+            currentReview.leafWidthCm === previousReview.leafWidthCm &&
+            currentReview.tillerCount === previousReview.tillerCount;
           if (reviewIsUnedited) setReview(reviewFromReport(updatedActiveReport));
           setSelectedReport(updatedActiveReport);
         }

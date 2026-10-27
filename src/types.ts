@@ -50,6 +50,20 @@ export type FieldReport = {
   submitted_at: string;
   observations: string;
   damage_description: string;
+  crop_characteristics?: {
+    plant_height_cm: number | null;
+    leaves_per_stalk: number | null;
+    leaf_length_cm: number | null;
+    leaf_width_cm: number | null;
+    tiller_count: number | null;
+  };
+  sra_crop_assessment?: {
+    plant_height_cm: number | null;
+    leaves_per_stalk: number | null;
+    leaf_length_cm: number | null;
+    leaf_width_cm: number | null;
+    tiller_count: number | null;
+  };
   farmer_severity: string;
   farmer_severity_range?: string | null;
   affected_area_hectares: string;
@@ -143,4 +157,9 @@ export type ReviewForm = {
   assessmentRationale: string;
   reviewerNote: string;
   followUpAt: string;
+  plantHeightCm: string;
+  leavesPerStalk: string;
+  leafLengthCm: string;
+  leafWidthCm: string;
+  tillerCount: string;
 };

@@ -21,6 +21,13 @@ const severityOptions = [
   'Severe',
   'Highly severe',
 ];
+function decimalEntry(value: string) {
+  const clean = value.replace(/[^0-9.]/g, '');
+  const dot = clean.indexOf('.');
+  return dot < 0
+    ? clean
+    : `${clean.slice(0, dot)}.${clean.slice(dot + 1).replace(/\./g, '').slice(0, 2)}`;
+}
 export function ReportDetail({
   report,
   review,
@@ -54,6 +61,25 @@ export function ReportDetail({
       ? verificationOptions.filter(value => value !== 'For verification')
       : verificationOptions;
   const saveReview = () => {
+    const cropMeasurements = [
+      ['Plant height', review.plantHeightCm, false],
+      ['Leaves in a stalk', review.leavesPerStalk, true],
+      ['Leaf length', review.leafLengthCm, false],
+      ['Leaf width', review.leafWidthCm, false],
+      ['Tillers', review.tillerCount, true],
+    ] as const;
+    const invalidCropMeasurement = cropMeasurements.find(([, value, integer]) => {
+      if (!value?.trim()) return false;
+      const number = Number(value);
+      return !Number.isFinite(number) || number < 0 || (integer && !Number.isInteger(number));
+    });
+    if (invalidCropMeasurement) {
+      Alert.alert(
+        'Check crop measurements',
+        `${invalidCropMeasurement[0]} must be a non-negative ${invalidCropMeasurement[2] ? 'whole number' : 'number'}.`,
+      );
+      return;
+    }
     if (followUpDecision === null) {
       Alert.alert(
         'Choose the next step',
@@ -164,6 +190,18 @@ export function ReportDetail({
       </View>
       <View style={styles.card}>
         <SectionTitle
+          title="Farmer-reported crop characteristics"
+          detail="Original values submitted by the farmer; these are preserved separately."
+          styles={styles}
+        />
+        <InfoLine label="Plant height" value={report.crop_characteristics?.plant_height_cm != null ? `${report.crop_characteristics.plant_height_cm} cm` : 'Not provided'} styles={styles} />
+        <InfoLine label="Leaves in a stalk" value={report.crop_characteristics?.leaves_per_stalk != null ? String(report.crop_characteristics.leaves_per_stalk) : 'Not provided'} styles={styles} />
+        <InfoLine label="Leaf length" value={report.crop_characteristics?.leaf_length_cm != null ? `${report.crop_characteristics.leaf_length_cm} cm` : 'Not provided'} styles={styles} />
+        <InfoLine label="Leaf width" value={report.crop_characteristics?.leaf_width_cm != null ? `${report.crop_characteristics.leaf_width_cm} cm` : 'Not provided'} styles={styles} />
+        <InfoLine label="Tillers" value={report.crop_characteristics?.tiller_count != null ? String(report.crop_characteristics.tiller_count) : 'Not provided'} styles={styles} />
+      </View>
+      <View style={styles.card}>
+        <SectionTitle
           title={`Photo evidence · ${report.photos?.length || 0}`}
           detail="Private attachments · available to authorized staff"
           styles={styles}
@@ -266,6 +304,28 @@ export function ReportDetail({
             />
           ))}
         </View>
+        <Text style={[styles.fieldLabel, { marginTop: 18 }]}>SRA-assessed crop characteristics</Text>
+        <Text style={styles.inputHint}>Enter measurements observed or verified by SRA. These do not overwrite the farmer’s original values.</Text>
+        {([
+          ['Plant height (cm)', 'plantHeightCm', 'decimal-pad'],
+          ['Leaves in a stalk', 'leavesPerStalk', 'number-pad'],
+          ['Leaf length (cm)', 'leafLengthCm', 'decimal-pad'],
+          ['Leaf width (cm)', 'leafWidthCm', 'decimal-pad'],
+          ['Tillers', 'tillerCount', 'number-pad'],
+        ] as const).map(([label, key, keyboardType]) => (
+          <View key={key}>
+            <Text style={styles.fieldLabel}>{label}</Text>
+            <TextInput
+              editable={canReview}
+              value={review[key] || ''}
+              onChangeText={value => update(key, keyboardType === 'number-pad' ? value.replace(/\D/g, '') : decimalEntry(value))}
+              placeholder="Not assessed"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+              keyboardType={keyboardType}
+            />
+          </View>
+        ))}
         <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
           Assessment rationale
         </Text>

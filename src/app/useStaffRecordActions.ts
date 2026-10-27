@@ -15,7 +15,7 @@ import {
   readPendingReviews,
   savePendingReviews,
 } from '../offlineStore';
-import { reportIsCompleteWithoutVisit, reviewFromReport } from './reportReview';
+import { reportIsCompleteWithoutVisit, reviewFromReport, reviewPayload } from './reportReview';
 import { syncFollowUpVisit } from './followUpVisits';
 
 export type LoadMoreKind = 'reports' | 'farmers' | 'visits';
@@ -28,7 +28,12 @@ function reportHasReview(report: FieldReport) {
       report.sra_severity ||
       report.assessment_rationale?.trim() ||
       report.reviewer_note?.trim() ||
-      report.follow_up_at,
+      report.follow_up_at ||
+      report.sra_crop_assessment?.plant_height_cm != null ||
+      report.sra_crop_assessment?.leaves_per_stalk != null ||
+      report.sra_crop_assessment?.leaf_length_cm != null ||
+      report.sra_crop_assessment?.leaf_width_cm != null ||
+      report.sra_crop_assessment?.tiller_count != null,
   );
 }
 
@@ -214,7 +219,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
   };
 
   const queueReviewLocally = async () => {
-    if (!session || !selectedReport || !review) return;
+    if (!session || !selectedReport || !review) return false;
     const optimistic: FieldReport = {
       ...selectedReport,
       review_pending: true,
@@ -224,6 +229,13 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       assessment_rationale: review.assessmentRationale,
       reviewer_note: review.reviewerNote,
       follow_up_at: review.followUpAt || null,
+      sra_crop_assessment: {
+        plant_height_cm: review.plantHeightCm ? Number(review.plantHeightCm) : null,
+        leaves_per_stalk: review.leavesPerStalk ? Number(review.leavesPerStalk) : null,
+        leaf_length_cm: review.leafLengthCm ? Number(review.leafLengthCm) : null,
+        leaf_width_cm: review.leafWidthCm ? Number(review.leafWidthCm) : null,
+        tiller_count: review.tillerCount ? Number(review.tillerCount) : null,
+      },
     };
     const current = await readPendingReviews(session.user.id);
     const next: PendingReview[] = [
@@ -257,29 +269,29 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         : 'Review saved on this device. It will sync when you reconnect.',
       'success',
     );
+    return true;
   };
 
   const submitReview = async () => {
-    if (!session || !selectedReport || !review) return;
+    if (!session || !selectedReport || !review) return null;
     if (reportIsCompleteWithoutVisit(selectedReport)) {
       showNotice('This report is complete and locked for editing.', 'info');
-      return;
+      return null;
     }
     if (!session.scopes.includes('reports:review')) {
       showNotice(
         'This staff account can view reports but cannot submit reviews.',
         'error',
       );
-      return;
+      return null;
     }
     const followUpAt = review.followUpAt.trim();
     if (followUpAt && !/^\d{4}-\d{2}-\d{2}$/.test(followUpAt)) {
       showNotice('Enter the follow-up date as YYYY-MM-DD.', 'error');
-      return;
+      return null;
     }
     if (!online) {
-      await queueReviewLocally();
-      return;
+      return (await queueReviewLocally()) ? 'reports' : null;
     }
     setReviewBusy(true);
     try {
@@ -288,16 +300,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         session.token,
         {
           method: 'PUT',
-          body: JSON.stringify({
-            verificationStatus: review.verificationStatus,
-            sraSeverity:
-              review.sraSeverity === 'Not assessed'
-                ? 'Not assessed'
-                : review.sraSeverity || null,
-            assessmentRationale: review.assessmentRationale.trim() || null,
-            reviewerNote: review.reviewerNote.trim() || null,
-            followUpAt: followUpAt || null,
-          }),
+          body: JSON.stringify(reviewPayload(review)),
         },
       );
       setSelectedReport(response.data);
@@ -312,6 +315,11 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         assessmentRationale: response.data.assessment_rationale || '',
         reviewerNote: response.data.reviewer_note || '',
         followUpAt: response.data.follow_up_at || '',
+        plantHeightCm: response.data.sra_crop_assessment?.plant_height_cm?.toString() || '',
+        leavesPerStalk: response.data.sra_crop_assessment?.leaves_per_stalk?.toString() || '',
+        leafLengthCm: response.data.sra_crop_assessment?.leaf_length_cm?.toString() || '',
+        leafWidthCm: response.data.sra_crop_assessment?.leaf_width_cm?.toString() || '',
+        tillerCount: response.data.sra_crop_assessment?.tiller_count?.toString() || '',
       });
       let followUpSyncFailed = false;
       if (followUpAt || selectedReport.follow_up_at) {
@@ -339,25 +347,26 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
           setVisitBusy(false);
         }
       }
-      showNotice(
-        followUpSyncFailed
-          ? 'Review saved, but the follow-up visit could not be synchronized. Retry from the report or Visits.'
-          : followUpAt
-          ? 'Review saved and follow-up visit scheduled.'
-          : 'Review saved to the RSSI workspace.',
-        followUpSyncFailed ? 'error' : 'success',
-      );
+      if (!followUpSyncFailed) {
+        showNotice(
+          followUpAt
+            ? 'Review saved and follow-up visit scheduled.'
+            : 'Review saved to the RSSI workspace.',
+          'success',
+        );
+      }
       void refreshData();
+      return followUpAt && !followUpSyncFailed ? 'visits' : 'reports';
     } catch (error) {
       if (error instanceof ApiError && error.status === 0) {
         setOnline(false);
-        await queueReviewLocally();
-        return;
+        return (await queueReviewLocally()) ? 'reports' : null;
       }
       showNotice(
         error instanceof Error ? error.message : 'Review could not be saved.',
         'error',
       );
+      return null;
     } finally {
       setReviewBusy(false);
     }

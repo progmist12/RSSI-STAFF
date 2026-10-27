@@ -167,6 +167,7 @@ export function VisitsScreen({
   const [historyTarget, setHistoryTarget] = useState<FarmHistoryTarget | null>(
     null,
   );
+  const [historyReportId, setHistoryReportId] = useState<number | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [reportId, setReportId] = useState<number | null>(null);
   const [scheduledAt, setScheduledAt] = useState(todayInput());
@@ -179,12 +180,16 @@ export function VisitsScreen({
   useEffect(() => {
     onHistoryBackHandlerChange(() => {
       if (filter !== 'Completed' || !historyLocationKey) return false;
+      if (historyReportId !== null) {
+        setHistoryReportId(null);
+        return true;
+      }
       setHistoryLocationKey(null);
       setHistoryTarget(null);
       return true;
     });
     return () => onHistoryBackHandlerChange(null);
-  }, [filter, historyLocationKey, onHistoryBackHandlerChange]);
+  }, [filter, historyLocationKey, historyReportId, onHistoryBackHandlerChange]);
 
   const needle = query.trim().toLocaleLowerCase();
   const farmHistoryGroups = useMemo(() => {
@@ -333,6 +338,7 @@ export function VisitsScreen({
     setHistoryTarget({ ...historyRequest, key });
     setFilter('Completed');
     setQuery('');
+    setHistoryReportId(null);
     setHistoryLocationKey(key);
     onHistoryRequestHandled(historyRequest.requestId);
   }, [
@@ -398,6 +404,28 @@ export function VisitsScreen({
       );
     });
   }, [farmHistoryGroups, filter, historyLocationKey, needle]);
+  const selectedHistoryReport = useMemo(
+    () =>
+      visibleFarmHistory[0]?.reports.find(
+        report => report.id === historyReportId,
+      ) || null,
+    [historyReportId, visibleFarmHistory],
+  );
+  const selectedReportVisits = useMemo(
+    () =>
+      historyReportId === null
+        ? []
+        : visits.filter(
+            visit =>
+              visit.report_id === historyReportId &&
+              visit.status === 'completed',
+          ).sort((a, b) =>
+            (b.completed_at || b.scheduled_at).localeCompare(
+              a.completed_at || a.scheduled_at,
+            ),
+          ),
+    [historyReportId, visits],
+  );
   const scheduledCount = visits.filter(
     visit => visit.status === 'scheduled',
   ).length;
@@ -667,6 +695,7 @@ export function VisitsScreen({
                 setFilter(value);
                 setHistoryLocationKey(null);
                 setHistoryTarget(null);
+                setHistoryReportId(null);
               }}
               styles={styles}
             />
@@ -676,8 +705,12 @@ export function VisitsScreen({
       {filter === 'Completed' && historyLocationKey ? (
         <Pressable
           onPress={() => {
-            setHistoryLocationKey(null);
-            setHistoryTarget(null);
+            if (historyReportId !== null) {
+              setHistoryReportId(null);
+            } else {
+              setHistoryLocationKey(null);
+              setHistoryTarget(null);
+            }
           }}
           style={{
             marginBottom: 10,
@@ -687,7 +720,9 @@ export function VisitsScreen({
           }}
         >
           <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}>
-            ← All farms
+            {historyReportId !== null
+              ? '← Previous reports'
+              : '← All farms'}
           </Text>
         </Pressable>
       ) : null}
@@ -1220,7 +1255,7 @@ export function VisitsScreen({
             · {visibleFarmHistory[0].visits.length} completed{' '}
             {visibleFarmHistory[0].visits.length === 1 ? 'visit' : 'visits'}
           </Text>
-          {visibleFarmHistory[0].latestReport ? (
+          {visibleFarmHistory[0].latestReport && historyReportId === null ? (
             <Pressable
               onPress={() => onOpenReport(visibleFarmHistory[0].latestReport!)}
               style={{
@@ -1267,6 +1302,7 @@ export function VisitsScreen({
       ) : null}
       {filter === 'Completed' &&
       historyLocationKey &&
+      historyReportId === null &&
       visibleFarmHistory[0]?.reports.length > 1 ? (
         <View
           style={{
@@ -1292,58 +1328,167 @@ export function VisitsScreen({
             .filter(
               report => report.id !== visibleFarmHistory[0].latestReport?.id,
             )
-            .map(report => (
-              <View
-                key={`previous-report-${report.id}`}
-                style={{
-                  marginBottom: 8,
-                  marginLeft: 4,
-                  padding: 11,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: colors.line,
-                  backgroundColor: colors.surface,
-                }}
-              >
-                <Text
-                  style={{ color: colors.ink, fontSize: 12, fontWeight: '800' }}
-                >
-                  {report.code} · {report.verification_status}
-                </Text>
-                <Text
-                  style={{ color: colors.muted, fontSize: 10, marginTop: 3 }}
-                >
-                  Completed report ·{' '}
-                  {formatDate(report.submitted_at || report.observed_at)}
-                </Text>
-                <Pressable
-                  onPress={() => onOpenReport(report)}
+            .map(report => {
+              return (
+                <View
+                  key={`previous-report-${report.id}`}
                   style={{
-                    alignSelf: 'flex-start',
-                    marginTop: 8,
-                    paddingVertical: 7,
-                    paddingHorizontal: 10,
-                    borderRadius: 8,
-                    backgroundColor: colors.blueSoft,
+                    marginBottom: 8,
+                    marginLeft: 4,
+                    padding: 11,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: colors.line,
+                    backgroundColor: colors.surface,
                   }}
                 >
                   <Text
                     style={{
-                      color: colors.blue,
-                      fontSize: 11,
+                      color: colors.ink,
+                      fontSize: 12,
                       fontWeight: '800',
                     }}
                   >
-                    Open report
+                    {report.code} · {report.verification_status}
                   </Text>
-                </Pressable>
-              </View>
-            ))}
+                  <Text
+                    style={{ color: colors.muted, fontSize: 10, marginTop: 3 }}
+                  >
+                    Completed report ·{' '}
+                    {formatDate(report.submitted_at || report.observed_at)}
+                  </Text>
+                  <View
+                    style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
+                  >
+                    <Pressable
+                      onPress={() => onOpenReport(report)}
+                      style={{
+                        alignSelf: 'flex-start',
+                        marginTop: 8,
+                        paddingVertical: 7,
+                        paddingHorizontal: 10,
+                        borderRadius: 8,
+                        backgroundColor: colors.blueSoft,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: colors.blue,
+                          fontSize: 11,
+                          fontWeight: '800',
+                        }}
+                      >
+                        Open report
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`View completed visits for report ${report.code}`}
+                      onPress={() => setHistoryReportId(report.id)}
+                      style={{
+                        alignSelf: 'flex-start',
+                        marginTop: 8,
+                        paddingVertical: 7,
+                        paddingHorizontal: 10,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: colors.line,
+                        backgroundColor: colors.surface,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: colors.ink,
+                          fontSize: 11,
+                          fontWeight: '800',
+                        }}
+                      >
+                        Previous visits
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })}
         </View>
       ) : null}
       {filter === 'Completed' &&
       historyLocationKey &&
-      visibleFarmHistory[0]?.visits.length ? (
+      historyReportId !== null &&
+      selectedHistoryReport ? (
+        <View
+          style={{
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: colors.line,
+            backgroundColor: colors.surface,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.blue,
+              fontSize: 10,
+              fontWeight: '800',
+              marginBottom: 7,
+              letterSpacing: 0.5,
+            }}
+          >
+            PREVIOUS REPORT
+          </Text>
+          <Text style={{ color: colors.ink, fontSize: 12, fontWeight: '800' }}>
+            {selectedHistoryReport.code} ·{' '}
+            {selectedHistoryReport.verification_status}
+          </Text>
+          <Text style={{ color: colors.muted, fontSize: 10, marginTop: 3 }}>
+            {formatDate(
+              selectedHistoryReport.submitted_at ||
+                selectedHistoryReport.observed_at,
+            )}
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Pressable
+              onPress={() => onOpenReport(selectedHistoryReport)}
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: 8,
+                paddingVertical: 7,
+                paddingHorizontal: 10,
+                borderRadius: 8,
+                backgroundColor: colors.blueSoft,
+              }}
+            >
+              <Text
+                style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}
+              >
+                Open report
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setHistoryReportId(null)}
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: 8,
+                paddingVertical: 7,
+                paddingHorizontal: 10,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: colors.line,
+                backgroundColor: colors.surface,
+              }}
+            >
+              <Text
+                style={{ color: colors.ink, fontSize: 11, fontWeight: '800' }}
+              >
+                Back to previous reports
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+      {filter === 'Completed' && historyReportId !== null ? (
         <View
           style={{
             marginBottom: 12,
@@ -1362,85 +1507,84 @@ export function VisitsScreen({
               letterSpacing: 0.5,
             }}
           >
-            PREVIOUS COMPLETED VISITS
+            VISIT HISTORY FOR THIS REPORT
           </Text>
-          {visibleFarmHistory[0].visits.map(visit => (
-            <View
-              key={`history-${visit.id}`}
-              style={{
-                marginBottom: 9,
-                marginLeft: 4,
-                padding: 12,
-                borderRadius: 11,
-                borderWidth: 1,
-                borderColor: colors.line,
-                backgroundColor: colors.surface,
-              }}
-            >
-              <Text
-                style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}
-              >
-                {visit.report_code}
-              </Text>
-              <Text
+          {selectedReportVisits.length ? (
+            selectedReportVisits.map(visit => (
+              <View
+                key={`history-${visit.id}`}
                 style={{
-                  color: colors.ink,
-                  fontSize: 12,
-                  fontWeight: '800',
-                  marginTop: 4,
-                }}
-              >
-                Completed {formatDate(visit.completed_at || visit.scheduled_at)}
-              </Text>
-              {visit.visit_findings ? (
-                <Text
-                  style={{
-                    color: colors.muted,
-                    fontSize: 11,
-                    lineHeight: 16,
-                    marginTop: 5,
-                  }}
-                >
-                  {visit.visit_findings}
-                </Text>
-              ) : null}
-              {visit.checkings.map(check => (
-                <Text
-                  key={check.id}
-                  style={{ color: colors.muted, fontSize: 10, marginTop: 5 }}
-                >
-                  {check.label}: {check.result.replaceAll('_', ' ')}
-                  {check.finding ? ` · ${check.finding}` : ''}
-                </Text>
-              ))}
-              <Pressable
-                onPress={() =>
-                  onOpenReport(
-                    reports.find(report => report.id === visit.report_id) ||
-                      visit.report_id,
-                  )
-                }
-                style={{
-                  alignSelf: 'flex-start',
-                  marginTop: 9,
-                  paddingVertical: 7,
-                  paddingHorizontal: 10,
-                  borderRadius: 8,
-                  backgroundColor: colors.blueSoft,
+                  marginBottom: 9,
+                  marginLeft: 4,
+                  padding: 12,
+                  borderRadius: 11,
+                  borderWidth: 1,
+                  borderColor: colors.line,
+                  backgroundColor: colors.surface,
                 }}
               >
                 <Text
+                  style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}
+                >
+                  {visit.report_code}
+                </Text>
+                <Text
                   style={{
-                    color: colors.blue,
-                    fontSize: 11,
+                    color: colors.ink,
+                    fontSize: 12,
                     fontWeight: '800',
+                    marginTop: 4,
                   }}
                 >
-                  Open report
+                  Completed {formatDate(visit.completed_at || visit.scheduled_at)}
                 </Text>
-              </Pressable>
-            </View>
-          ))}
+                <Text
+                  style={{ color: colors.muted, fontSize: 10, marginTop: 3 }}
+                >
+                  Scheduled {formatDate(visit.scheduled_at)}
+                </Text>
+                {visit.staff_name ? (
+                  <Text
+                    style={{ color: colors.muted, fontSize: 10, marginTop: 4 }}
+                  >
+                    Assigned staff: {visit.staff_name}
+                  </Text>
+                ) : null}
+                {visit.completed_by_name ? (
+                  <Text
+                    style={{ color: colors.muted, fontSize: 10, marginTop: 3 }}
+                  >
+                    Completed by: {visit.completed_by_name}
+                  </Text>
+                ) : null}
+                {visit.visit_findings ? (
+                  <Text
+                    style={{
+                      color: colors.muted,
+                      fontSize: 11,
+                      lineHeight: 16,
+                      marginTop: 5,
+                    }}
+                  >
+                    {visit.visit_findings}
+                  </Text>
+                ) : null}
+                {visit.checkings.map(check => (
+                  <Text
+                    key={check.id}
+                    style={{ color: colors.muted, fontSize: 10, marginTop: 5 }}
+                  >
+                    {check.label}: {check.result.replaceAll('_', ' ')}
+                    {check.finding ? ` · ${check.finding}` : ''}
+                  </Text>
+                ))}
+              </View>
+            ))
+          ) : (
+            <Text style={{ color: colors.muted, fontSize: 11, marginLeft: 4 }}>
+              No completed visits are linked to this report.
+            </Text>
+          )}
         </View>
       ) : null}
 

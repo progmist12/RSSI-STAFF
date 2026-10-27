@@ -199,6 +199,47 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     },
     [setTab, tab],
   );
+  const saveReviewAndNavigate = useCallback(async () => {
+    const destination = await submitReview();
+    if (!destination) return;
+
+    setSelectedReport(null);
+    setSelectedFarmer(null);
+    setSearch('');
+    if (destination === 'visits') {
+      navigateToTab('visits');
+      return;
+    }
+
+    setListFilter(
+      review?.verificationStatus === 'Confirmed'
+        ? 'Confirmed'
+        : review?.verificationStatus === 'No detection'
+        ? 'All'
+        : review &&
+          (review.verificationStatus !== 'For verification' ||
+            review.sraSeverity !== 'Not assessed' ||
+            review.assessmentRationale.trim() ||
+            review.reviewerNote.trim() ||
+            review.followUpAt.trim() ||
+            review.plantHeightCm.trim() ||
+            review.leavesPerStalk.trim() ||
+            review.leafLengthCm.trim() ||
+            review.leafWidthCm.trim() ||
+            review.tillerCount.trim())
+        ? 'Reviewed'
+        : 'Needs review',
+    );
+    navigateToTab('reports');
+  }, [
+    navigateToTab,
+    review?.verificationStatus,
+    setListFilter,
+    setSearch,
+    setSelectedFarmer,
+    setSelectedReport,
+    submitReview,
+  ]);
   const openMapFarmHistory = useCallback(
     (mapReport: StaffMapReport, location: StaffMapLocation) => {
       const report = reports.find(item => item.id === mapReport.id);
@@ -598,7 +639,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
               photoFailed={photoFailed}
               setPhotoFailed={setPhotoFailed}
               token={session.token}
-              onSave={() => void submitReview()}
+              onSave={() => void saveReviewAndNavigate()}
             />
           ) : null}
           {selectedFarmer ? (

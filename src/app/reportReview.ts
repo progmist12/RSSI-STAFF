@@ -16,12 +16,17 @@ export function reportHasReview(report: FieldReport) {
       report.sra_severity ||
       report.assessment_rationale?.trim() ||
       report.reviewer_note?.trim() ||
+      report.farmer_message?.trim() ||
       report.follow_up_at ||
       crop?.plant_height_cm != null ||
       crop?.leaves_per_stalk != null ||
       crop?.leaf_length_cm != null ||
       crop?.leaf_width_cm != null ||
-      crop?.tiller_count != null,
+      crop?.tiller_count != null ||
+      crop?.measurement_date ||
+      crop?.crop_variety ||
+      crop?.growth_stage ||
+      crop?.sample_count != null,
   );
 }
 
@@ -61,12 +66,17 @@ export function reviewFromReport(report: FieldReport): ReviewForm {
     sraSeverity: report.sra_severity || 'Not assessed',
     assessmentRationale: report.assessment_rationale || '',
     reviewerNote: report.reviewer_note || '',
+    farmerMessage: report.farmer_message || '',
     followUpAt: report.follow_up_at || '',
     plantHeightCm: report.sra_crop_assessment?.plant_height_cm?.toString() || '',
     leavesPerStalk: report.sra_crop_assessment?.leaves_per_stalk?.toString() || '',
     leafLengthCm: report.sra_crop_assessment?.leaf_length_cm?.toString() || '',
     leafWidthCm: report.sra_crop_assessment?.leaf_width_cm?.toString() || '',
     tillerCount: report.sra_crop_assessment?.tiller_count?.toString() || '',
+    measurementDate: report.sra_crop_assessment?.measurement_date || '',
+    cropVariety: report.sra_crop_assessment?.crop_variety || '',
+    growthStage: report.sra_crop_assessment?.growth_stage || '',
+    sampleCount: report.sra_crop_assessment?.sample_count?.toString() || '',
   };
 }
 
@@ -77,6 +87,7 @@ export function reviewPayload(review: ReviewForm, nextStep: 'needed' | 'complete
     sraSeverity: review.sraSeverity || 'Not assessed',
     assessmentRationale: review.assessmentRationale.trim() || null,
     reviewerNote: review.reviewerNote.trim() || null,
+    farmerMessage: review.farmerMessage?.trim() || null,
     followUpAt: review.followUpAt.trim() || null,
     cropCharacteristics: {
       plantHeightCm: review.plantHeightCm?.trim() ? Number(review.plantHeightCm) : null,
@@ -84,6 +95,10 @@ export function reviewPayload(review: ReviewForm, nextStep: 'needed' | 'complete
       leafLengthCm: review.leafLengthCm?.trim() ? Number(review.leafLengthCm) : null,
       leafWidthCm: review.leafWidthCm?.trim() ? Number(review.leafWidthCm) : null,
       tillerCount: review.tillerCount?.trim() ? Number(review.tillerCount) : null,
+      measurementDate: review.measurementDate?.trim() || null,
+      cropVariety: review.cropVariety?.trim() || null,
+      growthStage: review.growthStage?.trim() || null,
+      sampleCount: review.sampleCount?.trim() ? Number(review.sampleCount) : null,
     },
   };
 }

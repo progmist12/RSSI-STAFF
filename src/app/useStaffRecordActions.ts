@@ -285,6 +285,7 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         review.sraSeverity === 'Not assessed' ? null : review.sraSeverity,
       assessment_rationale: review.assessmentRationale,
       reviewer_note: review.reviewerNote,
+      farmer_message: review.farmerMessage || '',
       follow_up_at: nextStep === 'needed' ? review.followUpAt || null : null,
       review_completed_at:
         nextStep === 'complete' &&
@@ -298,6 +299,10 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         leaf_length_cm: review.leafLengthCm ? Number(review.leafLengthCm) : null,
         leaf_width_cm: review.leafWidthCm ? Number(review.leafWidthCm) : null,
         tiller_count: review.tillerCount ? Number(review.tillerCount) : null,
+        measurement_date: review.measurementDate || null,
+        crop_variety: review.cropVariety || null,
+        growth_stage: review.growthStage || null,
+        sample_count: review.sampleCount ? Number(review.sampleCount) : null,
       },
     };
     optimistic.workflow_stage = optimistic.review_completed_at
@@ -367,8 +372,8 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
       showNotice('Choose an SRA-assessed severity for a confirmed report.', 'error');
       return null;
     }
-    if (review.verificationStatus === 'No detection' && !review.reviewerNote.trim()) {
-      showNotice('Add a reviewer message before completing a no-detection report.', 'error');
+    if (review.verificationStatus === 'No detection' && !review.farmerMessage?.trim()) {
+      showNotice('Add a message to the farmer before completing a no-detection report.', 'error');
       return null;
     }
     if (nextStep === 'needed' && !review.followUpAt.trim()) {
@@ -406,12 +411,17 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         sraSeverity: response.data.sra_severity || 'Not assessed',
         assessmentRationale: response.data.assessment_rationale || '',
         reviewerNote: response.data.reviewer_note || '',
+        farmerMessage: response.data.farmer_message || '',
         followUpAt: response.data.follow_up_at || '',
         plantHeightCm: response.data.sra_crop_assessment?.plant_height_cm?.toString() || '',
         leavesPerStalk: response.data.sra_crop_assessment?.leaves_per_stalk?.toString() || '',
         leafLengthCm: response.data.sra_crop_assessment?.leaf_length_cm?.toString() || '',
         leafWidthCm: response.data.sra_crop_assessment?.leaf_width_cm?.toString() || '',
         tillerCount: response.data.sra_crop_assessment?.tiller_count?.toString() || '',
+        measurementDate: response.data.sra_crop_assessment?.measurement_date || '',
+        cropVariety: response.data.sra_crop_assessment?.crop_variety || '',
+        growthStage: response.data.sra_crop_assessment?.growth_stage || '',
+        sampleCount: response.data.sra_crop_assessment?.sample_count?.toString() || '',
       });
       showNotice(
         response.data.follow_up_at
@@ -541,6 +551,10 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         leafLength: null,
         leafWidth: null,
         tillers: null,
+        measurementDate: null,
+        cropVariety: null,
+        growthStage: null,
+        sampleCount: null,
       },
       staff_name: session.user.name,
       completed_by_name: null,
@@ -565,6 +579,10 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
         leafLength: null,
         leafWidth: null,
         tillers: null,
+        measurementDate: null,
+        cropVariety: null,
+        growthStage: null,
+        sampleCount: null,
       },
     };
     if (!online || pendingVisitChanges.some(item => item.kind === 'create' && item.reportId === reportId)) {

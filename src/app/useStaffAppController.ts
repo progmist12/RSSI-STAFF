@@ -587,12 +587,17 @@ export function useStaffAppController() {
               currentReview.assessmentRationale ===
                 previousReview.assessmentRationale &&
               currentReview.reviewerNote === previousReview.reviewerNote &&
+              currentReview.farmerMessage === previousReview.farmerMessage &&
               currentReview.followUpAt === previousReview.followUpAt &&
               currentReview.plantHeightCm === previousReview.plantHeightCm &&
               currentReview.leavesPerStalk === previousReview.leavesPerStalk &&
               currentReview.leafLengthCm === previousReview.leafLengthCm &&
               currentReview.leafWidthCm === previousReview.leafWidthCm &&
-              currentReview.tillerCount === previousReview.tillerCount;
+              currentReview.tillerCount === previousReview.tillerCount &&
+              currentReview.measurementDate === previousReview.measurementDate &&
+              currentReview.cropVariety === previousReview.cropVariety &&
+              currentReview.growthStage === previousReview.growthStage &&
+              currentReview.sampleCount === previousReview.sampleCount;
             if (reviewIsUnedited) setReview(reviewFromReport(refreshedReport));
             setSelectedReport(refreshedReport);
           }
@@ -956,12 +961,17 @@ export function useStaffAppController() {
             currentReview.sraSeverity === previousReview.sraSeverity &&
             currentReview.assessmentRationale === previousReview.assessmentRationale &&
             currentReview.reviewerNote === previousReview.reviewerNote &&
+            currentReview.farmerMessage === previousReview.farmerMessage &&
             currentReview.followUpAt === previousReview.followUpAt &&
             currentReview.plantHeightCm === previousReview.plantHeightCm &&
             currentReview.leavesPerStalk === previousReview.leavesPerStalk &&
             currentReview.leafLengthCm === previousReview.leafLengthCm &&
             currentReview.leafWidthCm === previousReview.leafWidthCm &&
-            currentReview.tillerCount === previousReview.tillerCount;
+            currentReview.tillerCount === previousReview.tillerCount &&
+            currentReview.measurementDate === previousReview.measurementDate &&
+            currentReview.cropVariety === previousReview.cropVariety &&
+            currentReview.growthStage === previousReview.growthStage &&
+            currentReview.sampleCount === previousReview.sampleCount;
           if (reviewIsUnedited) setReview(reviewFromReport(updatedActiveReport));
           setSelectedReport(updatedActiveReport);
         }

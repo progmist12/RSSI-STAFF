@@ -31,7 +31,7 @@ type VisitPayload = {
 type VisitCreatePayload = Omit<VisitPayload, 'cropCharacteristics'>;
 
 const CROP_FIELDS: {
-  key: keyof CropCharacteristics;
+  key: 'leavesPerStalk' | 'plantHeight' | 'leafLength' | 'leafWidth' | 'tillers';
   label: string;
   unit: string;
 }[] = [
@@ -49,6 +49,10 @@ function emptyCropCharacteristics(): CropCharacteristics {
     leafLength: null,
     leafWidth: null,
     tillers: null,
+    measurementDate: null,
+    cropVariety: null,
+    growthStage: null,
+    sampleCount: null,
   };
 }
 
@@ -485,7 +489,7 @@ export function VisitsScreen({
     setVisitFindings(visit.visit_findings || '');
     setCheckings(checkingTemplate(visit.checkings));
     setCropCharacteristics(
-      visit.crop_characteristics || emptyCropCharacteristics(),
+      { ...emptyCropCharacteristics(), ...(visit.crop_characteristics || {}) },
     );
   };
 
@@ -511,6 +515,14 @@ export function VisitsScreen({
   const saveVisit = async (visit: StaffVisit, status: StaffVisit['status']) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(editScheduledAt)) {
       Alert.alert('Check the date', 'Enter the visit date as YYYY-MM-DD.');
+      return;
+    }
+    if (cropCharacteristics.measurementDate && !/^\d{4}-\d{2}-\d{2}$/.test(cropCharacteristics.measurementDate)) {
+      Alert.alert('Check measurement date', 'Enter the crop measurement date as YYYY-MM-DD.');
+      return;
+    }
+    if (cropCharacteristics.sampleCount != null && (!Number.isInteger(cropCharacteristics.sampleCount) || cropCharacteristics.sampleCount < 1 || cropCharacteristics.sampleCount > 1000000)) {
+      Alert.alert('Check sample count', 'Plants sampled must be a whole number from 1 to 1,000,000.');
       return;
     }
     if (status === 'completed' && checkings.length === 0) {
@@ -996,6 +1008,11 @@ export function VisitsScreen({
                         .filter(Boolean)
                         .join(' · ') || 'No measurements recorded'}
                     </Text>
+                    {visit.crop_characteristics.measurementDate || visit.crop_characteristics.cropVariety || visit.crop_characteristics.growthStage || visit.crop_characteristics.sampleCount != null ? (
+                      <Text style={{ color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 }}>
+                        {[visit.crop_characteristics.measurementDate ? `Measured ${formatDate(visit.crop_characteristics.measurementDate)}` : null, visit.crop_characteristics.cropVariety ? `Variety: ${visit.crop_characteristics.cropVariety}` : null, visit.crop_characteristics.growthStage ? `Stage: ${visit.crop_characteristics.growthStage}` : null, visit.crop_characteristics.sampleCount != null ? `Sample: ${visit.crop_characteristics.sampleCount} plants` : null].filter(Boolean).join(' · ')}
+                      </Text>
+                    ) : null}
                   </View>
                 ) : null}
                 {visit.checkings.map(check => (
@@ -1131,6 +1148,14 @@ export function VisitsScreen({
                         </View>
                       ))}
                     </View>
+                    <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginBottom: 4 }}>Measurement date</Text>
+                    <DatePickerField value={cropCharacteristics.measurementDate || ''} onChange={value => setCropCharacteristics(current => ({ ...current, measurementDate: value || null }))} colors={colors} disabled={visitBusy} />
+                    <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Crop variety</Text>
+                    <TextInput value={cropCharacteristics.cropVariety || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, cropVariety: value || null }))} maxLength={120} placeholder="If known" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
+                    <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Crop growth stage</Text>
+                    <TextInput value={cropCharacteristics.growthStage || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, growthStage: value || null }))} maxLength={80} placeholder="For example, tillering" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
+                    <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Plants sampled</Text>
+                    <TextInput value={cropCharacteristics.sampleCount == null ? '' : String(cropCharacteristics.sampleCount)} onChangeText={value => setCropCharacteristics(current => ({ ...current, sampleCount: value.replace(/\D/g, '') ? Number(value.replace(/\D/g, '')) : null }))} keyboardType="number-pad" placeholder="Optional count" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
                     {checkings.map((check, index) => (
                       <View
                         key={`${check.label}-${index}`}

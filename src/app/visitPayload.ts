@@ -9,6 +9,10 @@ export function visitCropCharacteristicsPayload(
     leafLengthCm: values.leafLength,
     leafWidthCm: values.leafWidth,
     tillerCount: values.tillers,
+    measurementDate: values.measurementDate || null,
+    cropVariety: values.cropVariety || null,
+    growthStage: values.growthStage || null,
+    sampleCount: values.sampleCount ?? null,
   };
 }
 

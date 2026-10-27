@@ -340,7 +340,10 @@ function MapScreenView({
           />
           {filteredLocations.map(location => {
             const latest = location.visibleReports[0];
-            const color = severityColor(latest?.farmer_severity);
+            const noReport = location.reports.length === 0;
+            const color = noReport
+              ? '#BBF7D0'
+              : severityColor(latest?.farmer_severity);
             const isSelected = selectedKey === location.key;
             return (
               <Marker
@@ -358,7 +361,12 @@ function MapScreenView({
                     borderRadius: 14,
                     backgroundColor: color,
                     borderWidth: isSelected ? 3 : 2,
-                    borderColor: '#FFFFFF',
+                    borderStyle: noReport ? 'dashed' : 'solid',
+                    borderColor: noReport
+                      ? isSelected
+                        ? '#166534'
+                        : '#15803D'
+                      : '#FFFFFF',
                     elevation: 4,
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -366,15 +374,16 @@ function MapScreenView({
                 >
                   <Text
                     style={{
-                      color:
-                        latest?.farmer_severity === 'Moderate'
+                      color: noReport
+                        ? '#166534'
+                        : latest?.farmer_severity === 'Moderate'
                           ? '#1F2937'
                           : '#FFFFFF',
                       fontSize: 9,
                       fontWeight: '900',
                     }}
                   >
-                    {location.visibleReports.length}
+                    {noReport ? '—' : location.visibleReports.length}
                   </Text>
                 </View>
               </Marker>
@@ -472,7 +481,7 @@ function MapScreenView({
           }}
         >
           <Text style={{ color: '#27364B', fontSize: 9 }}>
-            © OpenStreetMap contributors
+            Street map · OpenFreeMap
           </Text>
         </View>
         <View style={{ position: 'absolute', right: 10, top: 66, gap: 6 }}>
@@ -654,7 +663,9 @@ function MapScreenView({
             ))
           ) : (
             <Text style={{ color: colors.muted, fontSize: 11 }}>
-              No reports awaiting verification at this location.
+              {selectedLocation.reports.length === 0
+                ? 'No farmer report has been submitted here. Crop health has not been assessed.'
+                : 'No reports awaiting verification at this location.'}
             </Text>
           )}
         </View>

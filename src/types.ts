@@ -56,6 +56,10 @@ export type FieldReport = {
     leaf_length_cm: number | null;
     leaf_width_cm: number | null;
     tiller_count: number | null;
+    measurement_date?: string | null;
+    crop_variety?: string | null;
+    growth_stage?: string | null;
+    sample_count?: number | null;
   };
   sra_crop_assessment?: {
     plant_height_cm: number | null;
@@ -63,6 +67,10 @@ export type FieldReport = {
     leaf_length_cm: number | null;
     leaf_width_cm: number | null;
     tiller_count: number | null;
+    measurement_date?: string | null;
+    crop_variety?: string | null;
+    growth_stage?: string | null;
+    sample_count?: number | null;
   };
   farmer_severity: string;
   farmer_severity_range?: string | null;
@@ -74,6 +82,7 @@ export type FieldReport = {
   assigned_reviewer?: string | null;
   assessment_rationale?: string | null;
   reviewer_note?: string | null;
+  farmer_message?: string | null;
   follow_up_at?: string | null;
   review_completed_at?: string | null;
   workflow_stage?: 'needs_review' | 'reviewed' | 'confirmed' | 'upcoming' | 'completed';
@@ -99,6 +108,10 @@ export type CropCharacteristics = {
   leafLength: number | null;
   leafWidth: number | null;
   tillers: number | null;
+  measurementDate?: string | null;
+  cropVariety?: string | null;
+  growthStage?: string | null;
+  sampleCount?: number | null;
 };
 
 export type StaffVisit = {
@@ -169,10 +182,15 @@ export type ReviewForm = {
   sraSeverity: string;
   assessmentRationale: string;
   reviewerNote: string;
+  farmerMessage: string;
   followUpAt: string;
   plantHeightCm: string;
   leavesPerStalk: string;
   leafLengthCm: string;
   leafWidthCm: string;
   tillerCount: string;
+  measurementDate: string;
+  cropVariety: string;
+  growthStage: string;
+  sampleCount: string;
 };

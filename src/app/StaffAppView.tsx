@@ -79,7 +79,7 @@ const helpSections: Partial<
   map: {
     title: 'Latest farmer-reported damage severity',
     description:
-      'Farm pins appear only when location consent and staff permissions allow. Other reports are grouped at municipality centers. Tap a pin to open its reports. Marker color reflects the newest visible farmer-reported severity. Basemap tiles need internet; saved report locations remain available offline.',
+      'Farm pins appear only when location consent and staff permissions allow. Other reports are grouped at municipality centers. Tap a pin to open its reports. Green dashed markers mean no farmer report has been submitted and crop health is not assessed. Solid green markers mean a report was submitted without a severity estimate. Other colors reflect the newest visible farmer-reported severity. Basemap tiles need internet; saved report locations remain available offline.',
     legend: MAP_SEVERITY_LEGEND,
   },
   reports: {
@@ -235,12 +235,17 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             review.sraSeverity !== 'Not assessed' ||
             review.assessmentRationale.trim() ||
             review.reviewerNote.trim() ||
+            review.farmerMessage?.trim() ||
             review.followUpAt.trim() ||
             review.plantHeightCm.trim() ||
             review.leavesPerStalk.trim() ||
             review.leafLengthCm.trim() ||
             review.leafWidthCm.trim() ||
-            review.tillerCount.trim())
+            review.tillerCount.trim() ||
+            review.measurementDate.trim() ||
+            review.cropVariety.trim() ||
+            review.growthStage.trim() ||
+            review.sampleCount.trim())
         ? 'Reviewed'
         : 'Needs review',
     );

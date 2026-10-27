@@ -149,6 +149,10 @@ function MapScreenView({
   const selectedLocation = filteredLocations.find(
     location => location.key === selectedKey,
   );
+  const selectedLocationReviewReports =
+    selectedLocation?.visibleReports.filter(
+      report => report.verification_status === 'For verification',
+    ) ?? [];
   const calloutWidth = 195;
   const calloutHeight = 64;
   const calloutLeft = calloutPoint
@@ -528,12 +532,12 @@ function MapScreenView({
             <Text
               style={{ color: colors.ink, fontSize: 15, fontWeight: '800' }}
             >
-              Reports at this location
+              Reports awaiting verification
             </Text>
             <Text
               style={{ color: colors.blue, fontSize: 11, fontWeight: '700' }}
             >
-              {selectedLocation.visibleReports.length}
+              {selectedLocationReviewReports.length}
             </Text>
           </View>
           <Text style={{ color: colors.ink, fontSize: 14, fontWeight: '800' }}>
@@ -545,12 +549,12 @@ function MapScreenView({
               ? ' · approximate location'
               : ''}
           </Text>
-          {selectedLocation.visibleReports[0] ? (
+          {selectedLocationReviewReports[0] ? (
             <Pressable
               accessibilityRole="button"
               onPress={() =>
                 onViewFarmerHistory(
-                  selectedLocation.visibleReports[0],
+                  selectedLocationReviewReports[0],
                   selectedLocation,
                 )
               }
@@ -568,8 +572,8 @@ function MapScreenView({
               </Text>
             </Pressable>
           ) : null}
-          {selectedLocation.visibleReports.length ? (
-            selectedLocation.visibleReports.map(report => (
+          {selectedLocationReviewReports.length ? (
+            selectedLocationReviewReports.map(report => (
               <View
                 key={report.id}
                 style={{
@@ -650,7 +654,7 @@ function MapScreenView({
             ))
           ) : (
             <Text style={{ color: colors.muted, fontSize: 11 }}>
-              No farmer report has been submitted for this location yet.
+              No reports awaiting verification at this location.
             </Text>
           )}
         </View>

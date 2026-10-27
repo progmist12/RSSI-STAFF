@@ -5,7 +5,7 @@ import {
   type LoadMoreKind,
 } from './useStaffRecordActions';
 import { syncFollowUpVisit } from './followUpVisits';
-import { reviewPayload } from './reportReview';
+import { reviewFromReport, reviewPayload } from './reportReview';
 import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import {
@@ -93,9 +93,13 @@ export function useStaffAppController() {
   const refreshInFlightRef = useRef(false);
   const lastAutomaticRefreshAtRef = useRef(0);
   const seenReportIdsRef = useRef<Set<number> | null>(null);
-  const baseOpenReportRef = useRef<
-    (report: FieldReport | number) => Promise<boolean>
-  >(async () => false);
+  const selectedReportRef = useRef<FieldReport | null>(null);
+  const reviewRef = useRef<ReviewForm | null>(null);
+  selectedReportRef.current = selectedReport;
+  reviewRef.current = review;
+  const baseOpenReportRef = useRef<(report: FieldReport | number) => Promise<boolean>>(
+    async () => false,
+  );
   const handledNotificationReportsRef = useRef(new Set<number>());
   const pendingNotificationKey = 'rssi_staff_pending_report_open';
 
@@ -325,7 +329,7 @@ export function useStaffAppController() {
         await flushPendingReviews();
         const tasks = await Promise.allSettled([
           apiRequest<ApiPage<FieldReport>>(
-            '/staff/reports?page=1&pageSize=20',
+            '/staff/reports?page=1&pageSize=50',
             token,
           ),
           apiRequest<ApiPage<FieldReport>>(
@@ -333,7 +337,7 @@ export function useStaffAppController() {
             token,
           ),
           apiRequest<ApiPage<Farmer>>(
-            '/staff/farmers?page=1&pageSize=20',
+            '/staff/farmers?page=1&pageSize=50',
             token,
           ),
           apiRequest<{
@@ -341,7 +345,7 @@ export function useStaffAppController() {
             meta: { total_reports: number; location_count: number };
           }>('/staff/map-locations', token),
           apiRequest<ApiPage<StaffVisit>>(
-            '/staff/visits?page=1&pageSize=20',
+            '/staff/visits?page=1&pageSize=50',
             token,
           ),
         ]);
@@ -384,11 +388,36 @@ export function useStaffAppController() {
             reportResult.value.meta?.total ?? reportResult.value.data.length,
           );
           setReportPage(reportResult.value.meta?.page ?? 1);
-          if (selectedReport) {
-            const refreshed = reportResult.value.data.find(
-              item => item.id === selectedReport.id,
-            );
-            if (refreshed) setSelectedReport(refreshed);
+          const activeReport = selectedReportRef.current;
+          let refreshedReport = activeReport
+            ? freshReports.find(item => item.id === activeReport.id)
+            : undefined;
+          if (activeReport && !refreshedReport) {
+            try {
+              refreshedReport = (
+                await apiRequest<{ data: FieldReport }>(
+                  `/staff/reports/${activeReport.id}`,
+                  token,
+                )
+              ).data;
+            } catch {
+              // Keep the list refresh usable if the selected detail is unavailable.
+            }
+          }
+          if (activeReport && refreshedReport) {
+            const currentReview = reviewRef.current;
+            const previousReview = reviewFromReport(activeReport);
+            const reviewIsUnedited =
+              currentReview !== null &&
+              currentReview.verificationStatus ===
+                previousReview.verificationStatus &&
+              currentReview.sraSeverity === previousReview.sraSeverity &&
+              currentReview.assessmentRationale ===
+                previousReview.assessmentRationale &&
+              currentReview.reviewerNote === previousReview.reviewerNote &&
+              currentReview.followUpAt === previousReview.followUpAt;
+            if (reviewIsUnedited) setReview(reviewFromReport(refreshedReport));
+            setSelectedReport(refreshedReport);
           }
         } else {
           failedRequests.push(
@@ -592,19 +621,55 @@ export function useStaffAppController() {
       seenReportIdsRef.current = null;
       return;
     }
+    let pollInFlight = false;
     const pollReports = async () => {
       if (
         !online ||
         refreshInFlightRef.current ||
-        AppState.currentState !== 'active'
+        AppState.currentState !== 'active' ||
+        pollInFlight
       )
         return;
+      pollInFlight = true;
       try {
-        const response = await apiRequest<ApiPage<FieldReport>>(
-          '/staff/reports?page=1&pageSize=50',
-          session.token,
-        );
-        const latest = response.data || [];
+        const [
+          reportsResponse,
+          pendingResponse,
+          mapResponse,
+          visitsResponse,
+        ] = await Promise.all([
+          apiRequest<ApiPage<FieldReport>>(
+            '/staff/reports?page=1&pageSize=50',
+            session.token,
+          ),
+          apiRequest<ApiPage<FieldReport>>(
+            '/staff/reports?status=For%20verification&page=1&pageSize=1',
+            session.token,
+          ),
+          apiRequest<{
+            data: StaffMapLocation[];
+            meta: {total_reports: number; location_count: number};
+          }>('/staff/map-locations', session.token),
+          apiRequest<ApiPage<StaffVisit>>(
+            '/staff/visits?page=1&pageSize=50',
+            session.token,
+          ),
+        ]);
+        const latest = reportsResponse.data || [];
+        const activeReport = selectedReportRef.current;
+        let updatedActiveReport = activeReport
+          ? latest.find(report => report.id === activeReport.id)
+          : undefined;
+        if (activeReport && !updatedActiveReport) {
+          try {
+            updatedActiveReport = (await apiRequest<{data: FieldReport}>(
+              `/staff/reports/${activeReport.id}`,
+              session.token,
+            )).data;
+          } catch {
+            // The report list remains usable if a selected detail cannot refresh.
+          }
+        }
         const previous = seenReportIdsRef.current;
         if (previous) {
           latest
@@ -622,12 +687,38 @@ export function useStaffAppController() {
         }
         seenReportIdsRef.current = new Set(latest.map(report => report.id));
         setReports(latest);
-        setReportTotal(response.meta?.total ?? latest.length);
+        setReportTotal(reportsResponse.meta?.total ?? latest.length);
+        setPendingTotal(pendingResponse.meta?.total ?? 0);
+        if (activeReport && updatedActiveReport) {
+          const currentReview = reviewRef.current;
+          const previousReview = reviewFromReport(activeReport);
+          const reviewIsUnedited = currentReview !== null &&
+            currentReview.verificationStatus === previousReview.verificationStatus &&
+            currentReview.sraSeverity === previousReview.sraSeverity &&
+            currentReview.assessmentRationale === previousReview.assessmentRationale &&
+            currentReview.reviewerNote === previousReview.reviewerNote &&
+            currentReview.followUpAt === previousReview.followUpAt;
+          if (reviewIsUnedited) setReview(reviewFromReport(updatedActiveReport));
+          setSelectedReport(updatedActiveReport);
+        }
+        setMapLocations(mapResponse.data || []);
+        setMapReportTotal(
+          mapResponse.meta?.total_reports ??
+            (mapResponse.data || []).reduce(
+              (total, location) => total + location.report_count,
+              0,
+            ),
+        );
+        setVisits(visitsResponse.data || []);
+        setVisitTotal(visitsResponse.meta?.total ?? visitsResponse.data.length);
+        setVisitPage(visitsResponse.meta?.page ?? 1);
       } catch {
         // Normal refresh handles visible errors; polling stays quiet.
+      } finally {
+        pollInFlight = false;
       }
     };
-    const timer = setInterval(() => void pollReports(), 120_000);
+    const timer = setInterval(() => void pollReports(), 30_000);
     return () => clearInterval(timer);
   }, [addNotification, online, session?.token]);
 

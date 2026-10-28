@@ -26,14 +26,7 @@ export function ReportsScreen({
   styles,
   colors,
 }: any) {
-  const statuses = [
-    'Needs review',
-    'Reviewed',
-    'Confirmed',
-    'Upcoming',
-    'Completed',
-    'All',
-  ];
+  const statuses = ['Needs review', 'Reviewed', 'Confirmed'];
   return (
     <View>
       <SectionIntro

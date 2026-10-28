@@ -23,6 +23,21 @@ const provinceOptions = [
 const statusOptions = ['All', 'For verification'];
 const DEFAULT_MAP_CENTER: [number, number] = [122.9, 10.25];
 const DEFAULT_MAP_ZOOM = 7.7;
+
+function latestReport(reports: StaffMapReport[]) {
+  return [...reports].sort((left, right) =>
+    (right.submitted_at || right.observed_at).localeCompare(
+      left.submitted_at || left.observed_at,
+    ),
+  )[0];
+}
+
+function reportsAwaitingVerification(reports: StaffMapReport[]) {
+  return reports.filter(
+    report => report.verification_status === 'For verification',
+  );
+}
+
 function normalizedSeverity(severity: string | null | undefined) {
   if (severity === 'Low') return 'Mild';
   return severity || 'Not assessed';
@@ -149,10 +164,12 @@ function MapScreenView({
   const selectedLocation = filteredLocations.find(
     location => location.key === selectedKey,
   );
-  const selectedLocationReviewReports =
-    selectedLocation?.visibleReports.filter(
-      report => report.verification_status === 'For verification',
-    ) ?? [];
+  const selectedLocationReviewReports = reportsAwaitingVerification(
+    selectedLocation?.reports ?? [],
+  );
+  const selectedLocationHistoryReport = selectedLocation
+    ? latestReport(selectedLocation.reports)
+    : undefined;
   const calloutWidth = 195;
   const calloutHeight = 64;
   const calloutLeft = calloutPoint
@@ -339,11 +356,19 @@ function MapScreenView({
             maxZoom={22}
           />
           {filteredLocations.map(location => {
-            const latest = location.visibleReports[0];
+            const latest = latestReport(location.reports);
+            const latestPending = latestReport(
+              reportsAwaitingVerification(location.reports),
+            );
+            const markerSeverity =
+              latestPending?.farmer_severity ||
+              latest?.farmer_severity ||
+              location.farmer_severity;
             const noReport = location.reports.length === 0;
-            const color = noReport
-              ? '#BBF7D0'
-              : severityColor(latest?.farmer_severity);
+            const pendingCount = reportsAwaitingVerification(
+              location.reports,
+            ).length;
+            const color = noReport ? '#BBF7D0' : severityColor(markerSeverity);
             const isSelected = selectedKey === location.key;
             return (
               <Marker
@@ -376,14 +401,14 @@ function MapScreenView({
                     style={{
                       color: noReport
                         ? '#166534'
-                        : latest?.farmer_severity === 'Moderate'
-                          ? '#1F2937'
-                          : '#FFFFFF',
+                        : markerSeverity === 'Moderate'
+                        ? '#1F2937'
+                        : '#FFFFFF',
                       fontSize: 9,
                       fontWeight: '900',
                     }}
                   >
-                    {noReport ? '—' : location.visibleReports.length}
+                    {noReport ? '—' : pendingCount}
                   </Text>
                 </View>
               </Marker>
@@ -558,12 +583,12 @@ function MapScreenView({
               ? ' · approximate location'
               : ''}
           </Text>
-          {selectedLocationReviewReports[0] ? (
+          {selectedLocationHistoryReport ? (
             <Pressable
               accessibilityRole="button"
               onPress={() =>
                 onViewFarmerHistory(
-                  selectedLocationReviewReports[0],
+                  selectedLocationHistoryReport,
                   selectedLocation,
                 )
               }

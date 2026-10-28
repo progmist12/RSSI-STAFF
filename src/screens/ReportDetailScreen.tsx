@@ -50,7 +50,12 @@ export function ReportDetail({
   scrollRef,
 }: any) {
   const verificationStatusRef = useRef<any>(null);
+  const severityRef = useRef<any>(null);
+  const farmerMessageRef = useRef<any>(null);
   const [showCompletionWarning, setShowCompletionWarning] = useState(false);
+  const [showSeverityWarning, setShowSeverityWarning] = useState(false);
+  const [showFarmerMessageWarning, setShowFarmerMessageWarning] =
+    useState(false);
   const cropVisit = [...visits]
     .filter((visit: any) => visit.crop_characteristics)
     .sort((a: any, b: any) =>
@@ -101,12 +106,23 @@ export function ReportDetail({
       );
       return;
     }
-    if (review.measurementDate && !/^\d{4}-\d{2}-\d{2}$/.test(review.measurementDate)) {
+    if (
+      review.measurementDate &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(review.measurementDate)
+    ) {
       Alert.alert('Check measurement date', 'Enter the date as YYYY-MM-DD.');
       return;
     }
-    if (review.sampleCount && (!Number.isInteger(Number(review.sampleCount)) || Number(review.sampleCount) < 1 || Number(review.sampleCount) > 1000000)) {
-      Alert.alert('Check sample count', 'Plants sampled must be a whole number from 1 to 1,000,000.');
+    if (
+      review.sampleCount &&
+      (!Number.isInteger(Number(review.sampleCount)) ||
+        Number(review.sampleCount) < 1 ||
+        Number(review.sampleCount) > 1000000)
+    ) {
+      Alert.alert(
+        'Check sample count',
+        'Plants sampled must be a whole number from 1 to 1,000,000.',
+      );
       return;
     }
     if (
@@ -115,20 +131,36 @@ export function ReportDetail({
         review.sraSeverity,
       )
     ) {
-      Alert.alert(
-        'Choose SRA severity',
-        'A confirmed report needs an SRA-assessed severity before it can be saved.',
-      );
+      setShowSeverityWarning(true);
+      requestAnimationFrame(() => {
+        severityRef.current?.measureLayout(
+          scrollRef?.current as any,
+          (_x: number, y: number) =>
+            scrollRef?.current?.scrollTo({
+              y: Math.max(0, y - 18),
+              animated: true,
+            }),
+          () => undefined,
+        );
+      });
       return;
     }
     if (
       review.verificationStatus === 'No detection' &&
       !review.farmerMessage?.trim()
     ) {
-      Alert.alert(
-        'Add a message to the farmer',
-        'A no-detection decision needs a farmer-facing update before the report can be completed.',
-      );
+      setShowFarmerMessageWarning(true);
+      requestAnimationFrame(() => {
+        farmerMessageRef.current?.measureLayout(
+          scrollRef?.current as any,
+          (_x: number, y: number) =>
+            scrollRef?.current?.scrollTo({
+              y: Math.max(0, y - 18),
+              animated: true,
+            }),
+          () => undefined,
+        );
+      });
       return;
     }
     if (followUpDecision === null) {
@@ -257,10 +289,36 @@ export function ReportDetail({
                 styles={styles}
               />
             ))}
-            <InfoLine label="Measurement date" value={cropVisit.crop_characteristics.measurementDate || 'Not recorded'} styles={styles} />
-            <InfoLine label="Crop variety" value={cropVisit.crop_characteristics.cropVariety || 'Not recorded'} styles={styles} />
-            <InfoLine label="Growth stage" value={cropVisit.crop_characteristics.growthStage || 'Not recorded'} styles={styles} />
-            <InfoLine label="Plants sampled" value={cropVisit.crop_characteristics.sampleCount != null ? String(cropVisit.crop_characteristics.sampleCount) : 'Not recorded'} styles={styles} />
+            <InfoLine
+              label="Measurement date"
+              value={
+                cropVisit.crop_characteristics.measurementDate || 'Not recorded'
+              }
+              styles={styles}
+            />
+            <InfoLine
+              label="Crop variety"
+              value={
+                cropVisit.crop_characteristics.cropVariety || 'Not recorded'
+              }
+              styles={styles}
+            />
+            <InfoLine
+              label="Growth stage"
+              value={
+                cropVisit.crop_characteristics.growthStage || 'Not recorded'
+              }
+              styles={styles}
+            />
+            <InfoLine
+              label="Plants sampled"
+              value={
+                cropVisit.crop_characteristics.sampleCount != null
+                  ? String(cropVisit.crop_characteristics.sampleCount)
+                  : 'Not recorded'
+              }
+              styles={styles}
+            />
           </View>
         ) : (
           <Text style={styles.bodyText}>
@@ -353,10 +411,32 @@ export function ReportDetail({
           }
           styles={styles}
         />
-        <InfoLine label="Measurement date" value={report.crop_characteristics?.measurement_date || 'Not recorded'} styles={styles} />
-        <InfoLine label="Crop variety" value={report.crop_characteristics?.crop_variety || 'Not recorded'} styles={styles} />
-        <InfoLine label="Growth stage" value={report.crop_characteristics?.growth_stage || 'Not recorded'} styles={styles} />
-        <InfoLine label="Plants sampled" value={report.crop_characteristics?.sample_count != null ? String(report.crop_characteristics.sample_count) : 'Not recorded'} styles={styles} />
+        <InfoLine
+          label="Measurement date"
+          value={
+            report.crop_characteristics?.measurement_date || 'Not recorded'
+          }
+          styles={styles}
+        />
+        <InfoLine
+          label="Crop variety"
+          value={report.crop_characteristics?.crop_variety || 'Not recorded'}
+          styles={styles}
+        />
+        <InfoLine
+          label="Growth stage"
+          value={report.crop_characteristics?.growth_stage || 'Not recorded'}
+          styles={styles}
+        />
+        <InfoLine
+          label="Plants sampled"
+          value={
+            report.crop_characteristics?.sample_count != null
+              ? String(report.crop_characteristics.sample_count)
+              : 'Not recorded'
+          }
+          styles={styles}
+        />
       </View>
       <View style={styles.card}>
         <SectionTitle
@@ -473,10 +553,13 @@ export function ReportDetail({
                       followUpAt: '',
                     }));
                     setShowCompletionWarning(false);
+                    setShowSeverityWarning(false);
                     return;
                   }
                   update('verificationStatus', value);
                   if (value === 'Confirmed') setShowCompletionWarning(false);
+                  else setShowSeverityWarning(false);
+                  setShowFarmerMessageWarning(false);
                 }}
                 disabled={!canReview}
                 styles={styles}
@@ -484,23 +567,64 @@ export function ReportDetail({
             ))}
           </View>
         </View>
-        <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
-          SRA-assessed severity
-        </Text>
-        <Text style={styles.inputHint}>
-          Choose independently from the farmer’s damage selection.
-        </Text>
-        <View style={styles.choiceWrap}>
-          {severityOptions.map(value => (
-            <Choice
-              key={value}
-              label={value}
-              selected={review.sraSeverity === value}
-              onPress={() => update('sraSeverity', value)}
-              disabled={!canReview}
-              styles={styles}
-            />
-          ))}
+        <View
+          ref={severityRef}
+          collapsable={false}
+          style={
+            showSeverityWarning
+              ? {
+                  borderWidth: 1,
+                  borderColor: colors.red,
+                  backgroundColor: colors.redSoft,
+                  borderRadius: 10,
+                  padding: 9,
+                  marginTop: 10,
+                }
+              : undefined
+          }
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              columnGap: 8,
+            }}
+          >
+            <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
+              SRA-assessed severity
+            </Text>
+            {showSeverityWarning ? (
+              <Text
+                style={{
+                  color: colors.red,
+                  fontSize: 11,
+                  fontWeight: '800',
+                  flexShrink: 1,
+                }}
+              >
+                Choose a severity before saving a confirmed report.
+              </Text>
+            ) : null}
+          </View>
+          <Text style={styles.inputHint}>
+            Choose independently from the farmer’s damage selection.
+          </Text>
+          <View style={styles.choiceWrap}>
+            {severityOptions.map(value => (
+              <Choice
+                key={value}
+                label={value}
+                selected={review.sraSeverity === value}
+                onPress={() => {
+                  update('sraSeverity', value);
+                  setShowSeverityWarning(false);
+                }}
+                disabled={!canReview}
+                styles={styles}
+              />
+            ))}
+          </View>
         </View>
         <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
           SRA-assessed crop characteristics
@@ -545,13 +669,50 @@ export function ReportDetail({
           </View>
         ))}
         <Text style={styles.fieldLabel}>Measurement date</Text>
-        <DatePickerField value={review.measurementDate} onChange={value => update('measurementDate', value)} colors={colors} disabled={!canReview} />
+        <DatePickerField
+          value={review.measurementDate}
+          onChange={value => update('measurementDate', value)}
+          colors={colors}
+          disabled={!canReview}
+        />
         <Text style={styles.fieldLabel}>Crop variety</Text>
-        <TextInput editable={canReview} value={review.cropVariety} onChangeText={value => update('cropVariety', value)} placeholder="If known" placeholderTextColor={colors.muted} maxLength={120} style={styles.input} />
+        <TextInput
+          editable={canReview}
+          value={review.cropVariety}
+          onChangeText={value => update('cropVariety', value)}
+          placeholder="If known"
+          placeholderTextColor={colors.muted}
+          maxLength={120}
+          style={styles.input}
+        />
         <Text style={styles.fieldLabel}>Crop growth stage</Text>
-        <TextInput editable={canReview} value={review.growthStage} onChangeText={value => update('growthStage', value)} placeholder="For example, tillering" placeholderTextColor={colors.muted} maxLength={80} style={styles.input} />
+        <TextInput
+          editable={canReview}
+          value={review.growthStage}
+          onChangeText={value => update('growthStage', value)}
+          placeholder="For example, tillering"
+          placeholderTextColor={colors.muted}
+          maxLength={80}
+          style={styles.input}
+        />
         <Text style={styles.fieldLabel}>Plants sampled</Text>
-        <NumericStepperInput editable={canReview} value={review.sampleCount} onChangeText={value => update('sampleCount', value.replace(/\D/g, ''))} placeholder="Optional count" placeholderTextColor={colors.muted} accessibilityLabel="Plants sampled" step={1} integer textColor={colors.muted} borderColor={colors.line} backgroundColor={colors.surfaceAlt} style={styles.input} keyboardType="number-pad" />
+        <NumericStepperInput
+          editable={canReview}
+          value={review.sampleCount}
+          onChangeText={value =>
+            update('sampleCount', value.replace(/\D/g, ''))
+          }
+          placeholder="Optional count"
+          placeholderTextColor={colors.muted}
+          accessibilityLabel="Plants sampled"
+          step={1}
+          integer
+          textColor={colors.muted}
+          borderColor={colors.line}
+          backgroundColor={colors.surfaceAlt}
+          style={styles.input}
+          keyboardType="number-pad"
+        />
         <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
           Assessment rationale
         </Text>
@@ -578,33 +739,89 @@ export function ReportDetail({
           multiline
           textAlignVertical="top"
         />
-        <Text style={[styles.fieldLabel, { marginTop: 15 }]}>Message to farmer</Text>
-        <Text style={styles.helperText}>This update appears in the farmer’s report progress. Internal reviewer notes stay private.</Text>
-        <TextInput
-          editable={canReview}
-          value={review.farmerMessage || ''}
-          onChangeText={value => update('farmerMessage', value)}
-          placeholder="Write a clear update the farmer can see"
-          placeholderTextColor={colors.muted}
-          maxLength={10000}
-          style={[styles.input, styles.multiline]}
-          multiline
-          textAlignVertical="top"
-        />
+        <View
+          ref={farmerMessageRef}
+          collapsable={false}
+          style={
+            showFarmerMessageWarning
+              ? {
+                  borderWidth: 1,
+                  borderColor: colors.red,
+                  backgroundColor: colors.redSoft,
+                  borderRadius: 10,
+                  padding: 9,
+                  marginTop: 10,
+                }
+              : undefined
+          }
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              columnGap: 8,
+            }}
+          >
+            <Text style={[styles.fieldLabel, { marginTop: 15 }]}>
+              Message to farmer
+            </Text>
+            {showFarmerMessageWarning ? (
+              <Text
+                style={{
+                  color: colors.red,
+                  fontSize: 11,
+                  fontWeight: '800',
+                  flexShrink: 1,
+                }}
+              >
+                Add a farmer-facing update before completing a no-detection
+                report.
+              </Text>
+            ) : null}
+          </View>
+          <TextInput
+            editable={canReview}
+            value={review.farmerMessage || ''}
+            onFocus={() => setShowFarmerMessageWarning(false)}
+            onChangeText={value => {
+              update('farmerMessage', value);
+              if (value.trim()) setShowFarmerMessageWarning(false);
+            }}
+            placeholder="Write a clear update the farmer can see"
+            placeholderTextColor={colors.muted}
+            maxLength={10000}
+            style={[styles.input, styles.multiline]}
+            multiline
+            textAlignVertical="top"
+          />
+        </View>
         <Text style={[styles.fieldLabel, { marginTop: 15 }]}>Next step</Text>
         <View style={styles.choiceWrap}>
           <Choice
             label="Needs follow-up visit"
             selected={followUpDecision === 'needed'}
-            onPress={() => setFollowUpDecision('needed')}
-            disabled={!canReview || review.verificationStatus === 'No detection'}
+            onPress={() => {
+              if (followUpDecision === 'needed') {
+                setFollowUpDecision(null);
+                update('followUpAt', '');
+              } else {
+                setFollowUpDecision('needed');
+                setShowCompletionWarning(false);
+              }
+            }}
+            disabled={
+              !canReview || review.verificationStatus === 'No detection'
+            }
             styles={styles}
           />
           <Choice
             label="Complete · no visit"
             selected={followUpDecision === 'complete'}
             onPress={() => {
-              setFollowUpDecision('complete');
+              setFollowUpDecision(
+                followUpDecision === 'complete' ? null : 'complete',
+              );
               update('followUpAt', '');
             }}
             disabled={!canReview}

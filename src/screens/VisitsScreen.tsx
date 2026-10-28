@@ -1156,6 +1156,12 @@ export function VisitsScreen({
                     <TextInput value={cropCharacteristics.growthStage || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, growthStage: value || null }))} maxLength={80} placeholder="For example, tillering" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
                     <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Plants sampled</Text>
                     <TextInput value={cropCharacteristics.sampleCount == null ? '' : String(cropCharacteristics.sampleCount)} onChangeText={value => setCropCharacteristics(current => ({ ...current, sampleCount: value.replace(/\D/g, '') ? Number(value.replace(/\D/g, '')) : null }))} keyboardType="number-pad" placeholder="Optional count" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
+                    <View style={{ marginTop: 16, marginBottom: 10, paddingTop: 13, borderTopWidth: 1, borderTopColor: colors.line }}>
+                      <Text style={{ color: colors.ink, fontSize: 14, fontWeight: '800' }}>Field checks</Text>
+                      <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 4 }}>
+                        Choose the result for each check. Add a short finding when useful.
+                      </Text>
+                    </View>
                     {checkings.map((check, index) => (
                       <View
                         key={`${check.label}-${index}`}
@@ -1179,20 +1185,27 @@ export function VisitsScreen({
                           style={{
                             flexDirection: 'row',
                             flexWrap: 'wrap',
-                            gap: 6,
-                            marginTop: 8,
+                            gap: 8,
+                            marginTop: 10,
                           }}
                         >
                           {RESULT_OPTIONS.map(option => (
                             <Pressable
                               key={option.value}
+                              accessibilityRole="radio"
+                              accessibilityState={{
+                                checked: check.result === option.value,
+                              }}
                               onPress={() =>
                                 setChecking(index, { result: option.value })
                               }
                               style={{
-                                paddingVertical: 6,
-                                paddingHorizontal: 8,
-                                borderRadius: 20,
+                                flexGrow: 1,
+                                flexBasis: '46%',
+                                minHeight: 42,
+                                paddingVertical: 9,
+                                paddingHorizontal: 10,
+                                borderRadius: 9,
                                 borderWidth: 1,
                                 borderColor:
                                   check.result === option.value
@@ -1202,6 +1215,8 @@ export function VisitsScreen({
                                   check.result === option.value
                                     ? colors.blueSoft
                                     : colors.surface,
+                                alignItems: 'center',
+                                justifyContent: 'center',
                               }}
                             >
                               <Text
@@ -1210,11 +1225,15 @@ export function VisitsScreen({
                                     check.result === option.value
                                       ? colors.blue
                                       : colors.muted,
-                                  fontSize: 10,
-                                  fontWeight: '700',
+                                  fontSize: 11,
+                                  fontWeight:
+                                    check.result === option.value ? '800' : '600',
+                                  textAlign: 'center',
                                 }}
                               >
-                                {option.label}
+                                {check.result === option.value
+                                  ? `✓ ${option.label}`
+                                  : option.label}
                               </Text>
                             </Pressable>
                           ))}
@@ -1225,7 +1244,8 @@ export function VisitsScreen({
                             setChecking(index, { finding: value })
                           }
                           multiline
-                          placeholder="Finding or short note (optional)"
+                        accessibilityLabel={`${check.label} finding`}
+                        placeholder="Finding or short note (optional)"
                           placeholderTextColor={colors.muted}
                           style={{
                             minHeight: 48,
@@ -1362,7 +1382,7 @@ export function VisitsScreen({
                           fontWeight: '800',
                         }}
                       >
-                        Record checkings
+                        Record checks
                       </Text>
                     </Pressable>
                   ) : null}

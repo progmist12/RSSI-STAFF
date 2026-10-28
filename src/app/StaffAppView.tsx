@@ -201,64 +201,67 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
     },
     [setTab, tab],
   );
-  const saveReviewAndNavigate = useCallback(async (nextStep: 'needed' | 'complete' | null) => {
-    const destination = await submitReview(nextStep);
-    if (!destination) return;
+  const saveReviewAndNavigate = useCallback(
+    async (nextStep: 'needed' | 'complete' | null) => {
+      const destination = await submitReview(nextStep);
+      if (!destination) return;
 
-    setSelectedReport(null);
-    setSelectedFarmer(null);
-    setSearch('');
-    if (destination === 'visits') {
-      navigateToTab('visits');
-      return;
-    }
+      setSelectedReport(null);
+      setSelectedFarmer(null);
+      setSearch('');
+      if (destination === 'visits') {
+        navigateToTab('visits');
+        return;
+      }
 
-    if (destination === 'completed') {
-      setListFilter('Completed');
+      if (destination === 'completed') {
+        setListFilter('Completed');
+        navigateToTab('reports');
+        return;
+      }
+
+      if (destination === 'upcoming') {
+        setListFilter('Upcoming');
+        navigateToTab('reports');
+        return;
+      }
+
+      setListFilter(
+        review?.verificationStatus === 'Confirmed'
+          ? 'Confirmed'
+          : review?.verificationStatus === 'No detection'
+          ? 'All'
+          : review &&
+            (review.verificationStatus !== 'For verification' ||
+              review.sraSeverity !== 'Not assessed' ||
+              review.assessmentRationale.trim() ||
+              review.reviewerNote.trim() ||
+              review.farmerMessage?.trim() ||
+              review.followUpAt.trim() ||
+              review.plantHeightCm.trim() ||
+              review.leavesPerStalk.trim() ||
+              review.leafLengthCm.trim() ||
+              review.leafWidthCm.trim() ||
+              review.tillerCount.trim() ||
+              review.measurementDate.trim() ||
+              review.cropVariety.trim() ||
+              review.growthStage.trim() ||
+              review.sampleCount.trim())
+          ? 'Reviewed'
+          : 'Needs review',
+      );
       navigateToTab('reports');
-      return;
-    }
-
-    if (destination === 'upcoming') {
-      setListFilter('Upcoming');
-      navigateToTab('reports');
-      return;
-    }
-
-    setListFilter(
-      review?.verificationStatus === 'Confirmed'
-        ? 'Confirmed'
-        : review?.verificationStatus === 'No detection'
-        ? 'All'
-        : review &&
-          (review.verificationStatus !== 'For verification' ||
-            review.sraSeverity !== 'Not assessed' ||
-            review.assessmentRationale.trim() ||
-            review.reviewerNote.trim() ||
-            review.farmerMessage?.trim() ||
-            review.followUpAt.trim() ||
-            review.plantHeightCm.trim() ||
-            review.leavesPerStalk.trim() ||
-            review.leafLengthCm.trim() ||
-            review.leafWidthCm.trim() ||
-            review.tillerCount.trim() ||
-            review.measurementDate.trim() ||
-            review.cropVariety.trim() ||
-            review.growthStage.trim() ||
-            review.sampleCount.trim())
-        ? 'Reviewed'
-        : 'Needs review',
-    );
-    navigateToTab('reports');
-  }, [
-    navigateToTab,
-    review,
-    setListFilter,
-    setSearch,
-    setSelectedFarmer,
-    setSelectedReport,
-    submitReview,
-  ]);
+    },
+    [
+      navigateToTab,
+      review,
+      setListFilter,
+      setSearch,
+      setSelectedFarmer,
+      setSelectedReport,
+      submitReview,
+    ],
+  );
   const openMapFarmHistory = useCallback(
     (mapReport: StaffMapReport, location: StaffMapLocation) => {
       const report = reports.find(item => item.id === mapReport.id);
@@ -598,7 +601,9 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
                   } waiting to sync`
                 : ''}
               {pendingVisitChanges.length
-                ? ` · ${pendingVisitChanges.length} visit change${pendingVisitChanges.length === 1 ? '' : 's'} waiting to sync`
+                ? ` · ${pendingVisitChanges.length} visit change${
+                    pendingVisitChanges.length === 1 ? '' : 's'
+                  } waiting to sync`
                 : ''}
             </Text>
           </View>
@@ -665,7 +670,9 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
               setPhotoFailed={setPhotoFailed}
               token={session.token}
               scrollRef={workspaceScrollRef}
-              onSave={() => void saveReviewAndNavigate()}
+              onSave={(nextStep: 'needed' | 'complete' | null) =>
+                void saveReviewAndNavigate(nextStep)
+              }
             />
           ) : null}
           {selectedFarmer ? (

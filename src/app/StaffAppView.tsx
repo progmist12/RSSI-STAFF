@@ -665,7 +665,9 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
               setPhotoFailed={setPhotoFailed}
               token={session.token}
               scrollRef={workspaceScrollRef}
-              onSave={() => void saveReviewAndNavigate()}
+              onSave={(nextStep: 'needed' | 'complete' | null) =>
+                void saveReviewAndNavigate(nextStep)
+              }
             />
           ) : null}
           {selectedFarmer ? (

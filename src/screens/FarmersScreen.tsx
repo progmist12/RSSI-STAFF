@@ -16,10 +16,12 @@ import type { Palette } from '../theme';
 import { formatDate, initials, roleName, severityStyle } from '../utils';
 export function FarmerDetail({
   farmer,
+  onOpenHistory,
   styles,
   colors,
 }: {
   farmer: Farmer;
+  onOpenHistory: (farmer: Farmer) => void;
   styles: any;
   colors: Palette;
 }) {
@@ -52,6 +54,13 @@ export function FarmerDetail({
           value={`${farmer.properties?.length || 0}`}
           styles={styles}
         />
+        <View style={{ marginTop: 12 }}>
+          <PrimaryButton
+            label="View farmer history"
+            onPress={() => onOpenHistory(farmer)}
+            styles={styles}
+          />
+        </View>
       </View>
       <SectionIntro
         eyebrow="REGISTERED LOCATIONS"

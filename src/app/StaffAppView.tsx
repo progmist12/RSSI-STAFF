@@ -42,7 +42,7 @@ import { VisitsCalendarModal } from '../components/VisitsCalendarModal';
 import { KeyboardInputScrollProvider } from '../components/KeyboardAwareTextInput';
 import type { StaffAppController, Tab } from './useStaffAppController';
 import { reportIsCompleteWithoutVisit } from './reportReview';
-import type { StaffMapLocation, StaffMapReport } from '../types';
+import type { Farmer, StaffMapLocation, StaffMapReport } from '../types';
 
 function HideTabBarWhileKeyboardOpen({
   children,
@@ -279,6 +279,27 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
       navigateToTab('visits');
     },
     [navigateToTab, reports],
+  );
+  const openFarmerHistory = useCallback(
+    (farmer: Farmer) => {
+      farmHistoryRequestIdRef.current += 1;
+      setFarmHistoryRequest({
+        requestId: farmHistoryRequestIdRef.current,
+        reportId: 0,
+        propertyId: null,
+        farmerName: farmer.name,
+        farmerReference: farmer.reference,
+        farmerPropertyIds: (farmer.properties || []).map(property => property.id),
+        farmerHistoryName: farmer.name,
+        propertyName: '',
+        municipality: null,
+        province: '',
+      });
+      setSelectedFarmer(null);
+      setSelectedReport(null);
+      navigateToTab('visits');
+    },
+    [navigateToTab, setSelectedFarmer, setSelectedReport],
   );
   const markFarmHistoryRequestHandled = useCallback((requestId: number) => {
     setFarmHistoryRequest(current =>
@@ -680,6 +701,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           {selectedFarmer ? (
             <FarmerDetail
               farmer={selectedFarmer}
+              onOpenHistory={openFarmerHistory}
               styles={styles}
               colors={colors}
             />

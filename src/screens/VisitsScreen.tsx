@@ -71,6 +71,7 @@ type FarmHistoryGroup = {
   key: string;
   propertyId?: number | null;
   farmerName: string;
+  farmerReference?: string | null;
   propertyName: string;
   municipality: string;
   province: string;
@@ -84,6 +85,9 @@ export type FarmHistoryRequest = {
   reportId: number;
   propertyId?: number | null;
   farmerName?: string | null;
+  farmerReference?: string | null;
+  farmerPropertyIds?: number[];
+  farmerHistoryName?: string;
   propertyName: string;
   municipality: string | null;
   province: string;
@@ -213,6 +217,15 @@ export function VisitsScreen({
   const [historyLocationKey, setHistoryLocationKey] = useState<string | null>(
     null,
   );
+  const [historyPropertyIds, setHistoryPropertyIds] = useState<number[] | null>(
+    null,
+  );
+  const [historyFarmerReference, setHistoryFarmerReference] = useState<
+    string | null
+  >(null);
+  const [historyFarmerName, setHistoryFarmerName] = useState<string | null>(
+    null,
+  );
   const [historyTarget, setHistoryTarget] = useState<FarmHistoryTarget | null>(
     null,
   );
@@ -230,17 +243,33 @@ export function VisitsScreen({
 
   useEffect(() => {
     onHistoryBackHandlerChange(() => {
-      if (filter !== 'Completed' || !historyLocationKey) return false;
+      if (
+        filter !== 'Completed' ||
+        (!historyLocationKey && historyPropertyIds === null)
+      )
+        return false;
       if (historyReportId !== null) {
         setHistoryReportId(null);
         return true;
       }
-      setHistoryLocationKey(null);
-      setHistoryTarget(null);
+      if (historyLocationKey) {
+        setHistoryLocationKey(null);
+        setHistoryTarget(null);
+      } else {
+        setHistoryPropertyIds(null);
+        setHistoryFarmerReference(null);
+        setHistoryFarmerName(null);
+      }
       return true;
     });
     return () => onHistoryBackHandlerChange(null);
-  }, [filter, historyLocationKey, historyReportId, onHistoryBackHandlerChange]);
+  }, [
+    filter,
+    historyLocationKey,
+    historyPropertyIds,
+    historyReportId,
+    onHistoryBackHandlerChange,
+  ]);
 
   const needle = query.trim().toLocaleLowerCase();
   const farmHistoryGroups = useMemo(() => {
@@ -252,6 +281,7 @@ export function VisitsScreen({
         key,
         propertyId: values.propertyId,
         farmerName: values.farmerName || 'Farmer',
+        farmerReference: values.farmerReference,
         propertyName: values.propertyName || 'Farm',
         municipality: values.municipality || '',
         province: values.province || '',
@@ -298,6 +328,7 @@ export function VisitsScreen({
       const group = getGroup(key, {
         propertyId: report?.property_id ?? visit.property_id,
         farmerName: visit.farmer_name || report?.farmer?.name,
+        farmerReference: report?.farmer?.reference,
         propertyName: visit.property_name || report?.property_name,
         municipality: visit.municipality || report?.municipality,
         province: visit.province || report?.province,
@@ -326,6 +357,7 @@ export function VisitsScreen({
         const group = getGroup(key, {
           propertyId: report.property_id,
           farmerName: report.farmer?.name,
+          farmerReference: report.farmer?.reference,
           propertyName: report.property_name,
           municipality: report.municipality,
           province: report.province,
@@ -360,6 +392,23 @@ export function VisitsScreen({
       historyTarget?.requestId === historyRequest.requestId
     )
       return;
+    if (historyRequest.farmerPropertyIds !== undefined) {
+      setHistoryTarget(null);
+      setHistoryLocationKey(null);
+      setHistoryPropertyIds(historyRequest.farmerPropertyIds);
+      setHistoryFarmerReference(historyRequest.farmerReference || null);
+      setHistoryFarmerName(
+        historyRequest.farmerHistoryName || historyRequest.farmerName || null,
+      );
+      setFilter('Completed');
+      setQuery('');
+      setHistoryReportId(null);
+      onHistoryRequestHandled(historyRequest.requestId);
+      return;
+    }
+    setHistoryPropertyIds(null);
+    setHistoryFarmerReference(null);
+    setHistoryFarmerName(null);
     const labelKey = placeLabelKey(
       historyRequest.farmerName,
       historyRequest.propertyName,
@@ -451,10 +500,23 @@ export function VisitsScreen({
           ...group.reports.map(report => report.code),
         ].some(value => value?.toLocaleLowerCase().includes(needle));
       return (
-        textMatch && (!historyLocationKey || group.key === historyLocationKey)
+        textMatch &&
+        (!historyLocationKey || group.key === historyLocationKey) &&
+        (historyPropertyIds === null ||
+          (group.propertyId != null &&
+            historyPropertyIds.includes(group.propertyId)) ||
+          (historyFarmerReference != null &&
+            group.farmerReference === historyFarmerReference))
       );
     });
-  }, [farmHistoryGroups, filter, historyLocationKey, needle]);
+  }, [
+    farmHistoryGroups,
+    filter,
+    historyFarmerReference,
+    historyLocationKey,
+    historyPropertyIds,
+    needle,
+  ]);
   const selectedHistoryReport = useMemo(
     () =>
       visibleFarmHistory[0]?.reports.find(
@@ -830,6 +892,9 @@ export function VisitsScreen({
               onPress={() => {
                 setFilter(value);
                 setHistoryLocationKey(null);
+                setHistoryPropertyIds(null);
+                setHistoryFarmerReference(null);
+                setHistoryFarmerName(null);
                 setHistoryTarget(null);
                 setHistoryReportId(null);
               }}
@@ -838,14 +903,19 @@ export function VisitsScreen({
           ),
         )}
       </View>
-      {filter === 'Completed' && historyLocationKey ? (
+      {filter === 'Completed' &&
+      (historyLocationKey || historyPropertyIds !== null) ? (
         <Pressable
           onPress={() => {
             if (historyReportId !== null) {
               setHistoryReportId(null);
-            } else {
+            } else if (historyLocationKey) {
               setHistoryLocationKey(null);
               setHistoryTarget(null);
+            } else {
+              setHistoryPropertyIds(null);
+              setHistoryFarmerReference(null);
+              setHistoryFarmerName(null);
             }
           }}
           style={{
@@ -858,9 +928,27 @@ export function VisitsScreen({
           <Text style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}>
             {historyReportId !== null
               ? '← Previous reports'
-              : '← All farms'}
+              : historyLocationKey
+              ? historyPropertyIds !== null
+                ? `← ${historyFarmerName || 'Farmer'} history`
+                : '← All farms'
+              : '← All farmers'}
           </Text>
         </Pressable>
+      ) : null}
+      {filter === 'Completed' &&
+      historyPropertyIds !== null &&
+      !historyLocationKey ? (
+        <Text
+          style={{
+            color: colors.ink,
+            fontSize: 14,
+            fontWeight: '800',
+            marginBottom: 9,
+          }}
+        >
+          {historyFarmerName || 'Farmer'} · History
+        </Text>
       ) : null}
 
       {filter !== 'Completed'
@@ -1896,8 +1984,16 @@ export function VisitsScreen({
       ) : null}
       {filter === 'Completed' && visibleFarmHistory.length === 0 ? (
         <EmptyCard
-          title="No farm history yet"
-          detail="Completed visits and reports marked no detection or no visit needed will appear here, grouped by farm."
+          title={
+            historyPropertyIds !== null
+              ? 'No farmer history yet'
+              : 'No farm history yet'
+          }
+          detail={
+            historyPropertyIds !== null
+              ? 'Completed visits and reports marked no detection or no visit needed for this farmer will appear here.'
+              : 'Completed visits and reports marked no detection or no visit needed will appear here, grouped by farm.'
+          }
           styles={styles}
         />
       ) : null}

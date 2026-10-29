@@ -28,19 +28,36 @@ export function KeyboardInputScrollProvider({
 }) {
   const focusedInputRef = useRef<number | null>(null);
   const keyboardVisibleRef = useRef(false);
+  const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearScrollTimers = useCallback(() => {
+    scrollTimersRef.current.forEach(clearTimeout);
+    scrollTimersRef.current = [];
+  }, []);
 
   const scrollFocusedInputIntoView = useCallback(() => {
-    const target = focusedInputRef.current;
-    if (target == null) return;
+    clearScrollTimers();
+    const delays = keyboardVisibleRef.current ? [0, 100, 260] : [80, 240, 460];
 
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
-        target,
-        100,
-        true,
-      );
-    });
-  }, [scrollRef]);
+    scrollTimersRef.current = delays.map(delay =>
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          const target = focusedInputRef.current;
+          if (target == null) return;
+          try {
+            scrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+              target,
+              120,
+              true,
+            );
+          } catch {
+            // A focus can race with a screen transition; the next retry will
+            // scroll the currently focused field after layout settles.
+          }
+        });
+      }, delay),
+    );
+  }, [clearScrollTimers, scrollRef]);
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener('keyboardDidShow', () => {
@@ -49,21 +66,26 @@ export function KeyboardInputScrollProvider({
     });
     const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
       keyboardVisibleRef.current = false;
+      clearScrollTimers();
     });
 
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
+      clearScrollTimers();
     };
-  }, [scrollFocusedInputIntoView]);
+  }, [clearScrollTimers, scrollFocusedInputIntoView]);
 
   const value: KeyboardInputScrollContextValue = {
     onInputFocus: target => {
       focusedInputRef.current = target;
-      if (keyboardVisibleRef.current) scrollFocusedInputIntoView();
+      scrollFocusedInputIntoView();
     },
     onInputBlur: target => {
-      if (focusedInputRef.current === target) focusedInputRef.current = null;
+      if (focusedInputRef.current === target) {
+        focusedInputRef.current = null;
+        clearScrollTimers();
+      }
     },
   };
 

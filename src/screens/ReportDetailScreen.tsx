@@ -1,11 +1,21 @@
 import React, { useRef, useState } from 'react';
-import { Alert, Image, Pressable, Text, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  StatusBar,
+  Text,
+  View,
+} from 'react-native';
 import { KeyboardAwareTextInput } from '../components/KeyboardAwareTextInput';
 import { photoUrl } from '../api';
+import { saveReportPhoto } from '../photoDownload';
 import { DatePickerField } from '../components/DatePickerField';
 import { reportWorkflowLabel, reportWorkflowTone } from '../app/reportReview';
 import { NumericStepperInput } from '../components/NumericStepperInput';
-import { Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
+import { Farmer, FieldReport, ReportPhoto, ReviewForm, StaffSession } from '../types';
 import {
   Choice,
   EmptyCard,
@@ -57,6 +67,10 @@ export function ReportDetail({
   const [showSeverityWarning, setShowSeverityWarning] = useState(false);
   const [showFarmerMessageWarning, setShowFarmerMessageWarning] =
     useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<ReportPhoto | null>(null);
+  const [downloadingPhotoId, setDownloadingPhotoId] = useState<number | null>(
+    null,
+  );
   const cropVisit = [...visits]
     .filter((visit: any) => visit.crop_characteristics)
     .sort((a: any, b: any) =>
@@ -75,6 +89,30 @@ export function ReportDetail({
   );
   const update = (key: keyof ReviewForm, value: string) =>
     setReview((old: ReviewForm) => ({ ...old, [key]: value }));
+  const downloadPhoto = async (photo: ReportPhoto) => {
+    if (downloadingPhotoId !== null) return;
+    setDownloadingPhotoId(photo.id);
+    try {
+      const outcome = await saveReportPhoto(
+        photo.url,
+        token,
+        `RSSI-${report.id}-${photo.id}-${photo.name}`,
+      );
+      if (outcome === 'downloaded') {
+        Alert.alert(
+          'Download started',
+          'The photo is being saved in your device’s Downloads folder.',
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Could not save photo',
+        error instanceof Error ? error.message : 'Check your connection and try again.',
+      );
+    } finally {
+      setDownloadingPhotoId(null);
+    }
+  };
   const visibleVerificationOptions =
     followUpDecision === 'complete'
       ? verificationOptions.filter(value => value !== 'For verification')
@@ -447,8 +485,15 @@ export function ReportDetail({
         />
         {report.photos?.length ? (
           <View style={styles.photoGrid}>
-            {report.photos.map((photo: any) => (
-              <View key={photo.id} style={styles.photoCard}>
+            {report.photos.map((photo: ReportPhoto) => (
+              <Pressable
+                key={photo.id}
+                accessibilityRole="button"
+                accessibilityLabel={`View photo ${photo.name}`}
+                disabled={photoFailed.includes(photo.id)}
+                onPress={() => setSelectedPhoto(photo)}
+                style={styles.photoCard}
+              >
                 {photoFailed.includes(photo.id) ? (
                   <View style={styles.photoUnavailable}>
                     <Text style={styles.photoUnavailableGlyph}>▧</Text>
@@ -476,9 +521,9 @@ export function ReportDetail({
                   />
                 )}
                 <Text style={styles.photoName} numberOfLines={1}>
-                  {photo.name}
+                  {photo.name} · Tap to enlarge
                 </Text>
-              </View>
+              </Pressable>
             ))}
           </View>
         ) : (
@@ -489,6 +534,98 @@ export function ReportDetail({
           />
         )}
       </View>
+      <Modal
+        visible={selectedPhoto !== null}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setSelectedPhoto(null)}
+      >
+        {selectedPhoto ? (
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: '#05080D',
+              paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0,
+              paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+            }}
+          >
+            <View
+              style={{
+                minHeight: 54,
+                paddingHorizontal: 14,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                style={{
+                  flex: 1,
+                  color: '#FFFFFF',
+                  fontSize: 13,
+                  fontWeight: '700',
+                }}
+              >
+                {selectedPhoto.name}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close photo viewer"
+                onPress={() => setSelectedPhoto(null)}
+                hitSlop={10}
+                style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 26 }}>×</Text>
+              </Pressable>
+            </View>
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+              <Image
+                source={{
+                  uri: photoUrl(selectedPhoto.url),
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'ngrok-skip-browser-warning': 'true',
+                  },
+                }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="contain"
+              />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Download submitted photo"
+              disabled={downloadingPhotoId !== null}
+              onPress={() => void downloadPhoto(selectedPhoto)}
+              style={{
+                minHeight: 48,
+                marginHorizontal: 14,
+                marginTop: 10,
+                borderRadius: 11,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor:
+                  downloadingPhotoId === selectedPhoto.id
+                    ? '#5374C8'
+                    : '#2456D7',
+                opacity: downloadingPhotoId !== null && downloadingPhotoId !== selectedPhoto.id ? 0.6 : 1,
+              }}
+            >
+              <Text
+                style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}
+              >
+                {downloadingPhotoId === selectedPhoto.id
+                  ? 'Saving photo…'
+                  : Platform.OS === 'ios'
+                    ? 'Save or share photo'
+                    : 'Download photo'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </Modal>
       <View style={styles.card}>
         <SectionTitle
           title="SRA review"

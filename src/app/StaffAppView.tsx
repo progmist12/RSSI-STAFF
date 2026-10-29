@@ -39,6 +39,7 @@ import { AppIcon, type AppIconName } from '../components/AppIcon';
 import { MapScreen } from '../screens/MapScreen';
 import { VisitsScreen, type FarmHistoryRequest } from '../screens/VisitsScreen';
 import { VisitsCalendarModal } from '../components/VisitsCalendarModal';
+import { KeyboardInputScrollProvider } from '../components/KeyboardAwareTextInput';
 import type { StaffAppController, Tab } from './useStaffAppController';
 import { reportIsCompleteWithoutVisit } from './reportReview';
 import type { StaffMapLocation, StaffMapReport } from '../types';
@@ -631,6 +632,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
           </View>
         )}
 
+        <KeyboardInputScrollProvider scrollRef={workspaceScrollRef}>
         <ScrollView
           ref={workspaceScrollRef}
           onScroll={event => {
@@ -803,6 +805,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
             />
           ) : null}
         </ScrollView>
+        </KeyboardInputScrollProvider>
         <HideTabBarWhileKeyboardOpen>
           {!selectedReport && !selectedFarmer && tab !== 'settings' && (
             <View

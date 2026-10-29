@@ -3,19 +3,21 @@ import {
   Animated,
   Image,
   KeyboardAvoidingView,
-  Keyboard,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import type { ScrollViewInstance } from 'react-native';
 import { StaffSession } from '../types';
 import { PrimaryButton } from '../components/ui';
+import {
+  KeyboardAwareTextInput,
+  KeyboardInputScrollProvider,
+} from '../components/KeyboardAwareTextInput';
 export function LoginScreen({
   styles,
   colors,
@@ -30,12 +32,6 @@ export function LoginScreen({
   onLogin,
 }: any) {
   const loginScrollRef = useRef<ScrollViewInstance>(null);
-  const passwordFocused = useRef(false);
-  const keyboardTop = useRef<number | null>(null);
-  const scrollOffset = useRef(0);
-  const loginCardTop = useRef(0);
-  const passwordFieldTop = useRef(0);
-  const passwordFieldHeight = useRef(0);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const eyeProgress = useRef(new Animated.Value(0)).current;
 
@@ -47,44 +43,6 @@ export function LoginScreen({
     }).start();
   }, [eyeProgress, passwordVisible]);
 
-  const scrollPasswordIntoView = (keyboardScreenY: number) => {
-    loginScrollRef.current?.measureInWindow((_x, scrollScreenY) => {
-      const visibleHeight = keyboardScreenY - scrollScreenY;
-      const fieldBottom =
-        loginCardTop.current +
-        passwordFieldTop.current +
-        passwordFieldHeight.current;
-      const overlap =
-        fieldBottom - scrollOffset.current - visibleHeight + 18;
-      if (overlap > 0) {
-        loginScrollRef.current?.scrollTo({
-          y: scrollOffset.current + overlap,
-          animated: true,
-        });
-      }
-    });
-  };
-
-  useEffect(() => {
-    const showSubscription = Keyboard.addListener('keyboardDidShow', event => {
-      keyboardTop.current = event.endCoordinates.screenY;
-      if (passwordFocused.current) {
-        requestAnimationFrame(() => {
-          if (keyboardTop.current !== null) {
-            scrollPasswordIntoView(keyboardTop.current);
-          }
-        });
-      }
-    });
-    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
-      keyboardTop.current = null;
-    });
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
-
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar
@@ -94,12 +52,9 @@ export function LoginScreen({
         style={styles.loginKeyboard}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <KeyboardInputScrollProvider scrollRef={loginScrollRef}>
         <ScrollView
           ref={loginScrollRef}
-          onScroll={event => {
-            scrollOffset.current = event.nativeEvent.contentOffset.y;
-          }}
-          scrollEventThrottle={16}
           contentContainerStyle={[
             styles.loginScroll,
             { paddingBottom: Math.max(insets, 26) },
@@ -119,12 +74,7 @@ export function LoginScreen({
               SUGAR CANE FIELD MONITORING
             </Text>
           </View>
-          <View
-            style={styles.loginCard}
-            onLayout={event => {
-              loginCardTop.current = event.nativeEvent.layout.y;
-            }}
-          >
+          <View style={styles.loginCard}>
             <View style={styles.loginEyebrow}>
               <Text style={styles.loginEyebrowText}>SRA STAFF ACCESS</Text>
             </View>
@@ -139,7 +89,7 @@ export function LoginScreen({
               </View>
             ) : null}
             <Text style={styles.fieldLabel}>Work email</Text>
-            <TextInput
+            <KeyboardAwareTextInput
               value={email}
               onChangeText={setEmail}
               placeholder="name@sra.gov.ph"
@@ -151,15 +101,10 @@ export function LoginScreen({
               style={styles.input}
               returnKeyType="next"
             />
-            <View
-              onLayout={event => {
-                passwordFieldTop.current = event.nativeEvent.layout.y;
-                passwordFieldHeight.current = event.nativeEvent.layout.height;
-              }}
-            >
+            <View>
               <Text style={[styles.fieldLabel, { marginTop: 15 }]}>Password</Text>
               <View style={{ position: 'relative', justifyContent: 'center' }}>
-                <TextInput
+                <KeyboardAwareTextInput
                   value={password}
                   onChangeText={setPassword}
                   placeholder="Enter your password"
@@ -168,19 +113,6 @@ export function LoginScreen({
                   autoComplete="password"
                   textContentType="password"
                   style={[styles.input, { paddingRight: 48 }]}
-                  onFocus={() => {
-                    passwordFocused.current = true;
-                    if (keyboardTop.current !== null) {
-                      requestAnimationFrame(() => {
-                        if (keyboardTop.current !== null) {
-                          scrollPasswordIntoView(keyboardTop.current);
-                        }
-                      });
-                    }
-                  }}
-                  onBlur={() => {
-                    passwordFocused.current = false;
-                  }}
                   onSubmitEditing={onLogin}
                   returnKeyType="done"
                 />
@@ -244,6 +176,7 @@ export function LoginScreen({
             Sugarcane field observation · Negros Oriental & Negros Occidental
           </Text>
         </ScrollView>
+        </KeyboardInputScrollProvider>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

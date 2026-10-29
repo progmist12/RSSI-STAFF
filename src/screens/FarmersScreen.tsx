@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 import { photoUrl } from '../api';
 import { Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
 import {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
+import { KeyboardAwareTextInput } from '../components/KeyboardAwareTextInput';
 import {
   Choice,
   EmptyCard,
@@ -770,7 +771,7 @@ export function VisitsScreen({
               disabled={visitBusy}
             />
           </View>
-          <TextInput
+          <KeyboardAwareTextInput
             value={scheduleFindings}
             onChangeText={setScheduleFindings}
             multiline
@@ -1151,11 +1152,11 @@ export function VisitsScreen({
                     <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginBottom: 4 }}>Measurement date</Text>
                     <DatePickerField value={cropCharacteristics.measurementDate || ''} onChange={value => setCropCharacteristics(current => ({ ...current, measurementDate: value || null }))} colors={colors} disabled={visitBusy} />
                     <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Crop variety</Text>
-                    <TextInput value={cropCharacteristics.cropVariety || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, cropVariety: value || null }))} maxLength={120} placeholder="If known" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
+                    <KeyboardAwareTextInput value={cropCharacteristics.cropVariety || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, cropVariety: value || null }))} maxLength={120} placeholder="If known" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
                     <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Crop growth stage</Text>
-                    <TextInput value={cropCharacteristics.growthStage || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, growthStage: value || null }))} maxLength={80} placeholder="For example, tillering" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
+                    <KeyboardAwareTextInput value={cropCharacteristics.growthStage || ''} onChangeText={value => setCropCharacteristics(current => ({ ...current, growthStage: value || null }))} maxLength={80} placeholder="For example, tillering" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
                     <Text style={{ color: colors.muted, fontSize: 10, fontWeight: '700', marginTop: 8, marginBottom: 4 }}>Plants sampled</Text>
-                    <TextInput value={cropCharacteristics.sampleCount == null ? '' : String(cropCharacteristics.sampleCount)} onChangeText={value => setCropCharacteristics(current => ({ ...current, sampleCount: value.replace(/\D/g, '') ? Number(value.replace(/\D/g, '')) : null }))} keyboardType="number-pad" placeholder="Optional count" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
+                    <KeyboardAwareTextInput value={cropCharacteristics.sampleCount == null ? '' : String(cropCharacteristics.sampleCount)} onChangeText={value => setCropCharacteristics(current => ({ ...current, sampleCount: value.replace(/\D/g, '') ? Number(value.replace(/\D/g, '')) : null }))} keyboardType="number-pad" placeholder="Optional count" placeholderTextColor={colors.muted} style={{ borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, color: colors.ink, backgroundColor: colors.surface }} />
                     <View style={{ marginTop: 16, marginBottom: 10, paddingTop: 13, borderTopWidth: 1, borderTopColor: colors.line }}>
                       <Text style={{ color: colors.ink, fontSize: 14, fontWeight: '800' }}>Field checks</Text>
                       <Text style={{ color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 4 }}>
@@ -1238,7 +1239,7 @@ export function VisitsScreen({
                             </Pressable>
                           ))}
                         </View>
-                        <TextInput
+                        <KeyboardAwareTextInput
                           value={check.finding}
                           onChangeText={value =>
                             setChecking(index, { finding: value })
@@ -1271,7 +1272,7 @@ export function VisitsScreen({
                     >
                       Overall visit findings
                     </Text>
-                    <TextInput
+                    <KeyboardAwareTextInput
                       value={visitFindings}
                       onChangeText={setVisitFindings}
                       multiline

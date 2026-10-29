@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import { KeyboardAwareTextInput } from '../components/KeyboardAwareTextInput';
 import {
   Camera,
   Map,
@@ -237,7 +238,7 @@ function MapScreenView({
         </Text>
       </View>
 
-      <TextInput
+      <KeyboardAwareTextInput
         accessibilityLabel="Search map reports"
         value={query}
         onChangeText={setQuery}

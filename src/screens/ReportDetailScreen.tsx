@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, Text, View } from 'react-native';
+import { KeyboardAwareTextInput } from '../components/KeyboardAwareTextInput';
 import { photoUrl } from '../api';
 import { DatePickerField } from '../components/DatePickerField';
 import { reportWorkflowLabel, reportWorkflowTone } from '../app/reportReview';
@@ -676,7 +677,7 @@ export function ReportDetail({
           disabled={!canReview}
         />
         <Text style={styles.fieldLabel}>Crop variety</Text>
-        <TextInput
+        <KeyboardAwareTextInput
           editable={canReview}
           value={review.cropVariety}
           onChangeText={value => update('cropVariety', value)}
@@ -686,7 +687,7 @@ export function ReportDetail({
           style={styles.input}
         />
         <Text style={styles.fieldLabel}>Crop growth stage</Text>
-        <TextInput
+        <KeyboardAwareTextInput
           editable={canReview}
           value={review.growthStage}
           onChangeText={value => update('growthStage', value)}
@@ -716,7 +717,7 @@ export function ReportDetail({
         <Text style={[styles.fieldLabel, { marginTop: 18 }]}>
           Assessment rationale
         </Text>
-        <TextInput
+        <KeyboardAwareTextInput
           editable={canReview}
           value={review.assessmentRationale}
           onChangeText={value => update('assessmentRationale', value)}
@@ -729,7 +730,7 @@ export function ReportDetail({
         <Text style={[styles.fieldLabel, { marginTop: 15 }]}>
           Reviewer note
         </Text>
-        <TextInput
+        <KeyboardAwareTextInput
           editable={canReview}
           value={review.reviewerNote}
           onChangeText={value => update('reviewerNote', value)}
@@ -780,7 +781,7 @@ export function ReportDetail({
               </Text>
             ) : null}
           </View>
-          <TextInput
+          <KeyboardAwareTextInput
             editable={canReview}
             value={review.farmerMessage || ''}
             onFocus={() => setShowFarmerMessageWarning(false)}

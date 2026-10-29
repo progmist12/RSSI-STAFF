@@ -3,11 +3,11 @@ import {
   Pressable,
   StyleProp,
   Text,
-  TextInput,
   TextInputProps,
   TextStyle,
   View,
 } from 'react-native';
+import { KeyboardAwareTextInput } from './KeyboardAwareTextInput';
 
 type NumericStepperInputProps = Pick<
   TextInputProps,
@@ -51,7 +51,7 @@ export function NumericStepperInput({
 
   return (
     <View style={{ position: 'relative' }}>
-      <TextInput
+      <KeyboardAwareTextInput
         {...inputProps}
         editable={editable}
         value={value}

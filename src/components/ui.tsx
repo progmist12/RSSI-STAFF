@@ -3,9 +3,9 @@ import {
   ActivityIndicator,
   Pressable,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { KeyboardAwareTextInput } from './KeyboardAwareTextInput';
 import { Farmer, FieldReport } from '../types';
 import { formatDate, initials, severityStyle, shortProvince } from '../utils';
 import { reportWorkflowLabel, reportWorkflowTone } from '../app/reportReview';
@@ -47,7 +47,7 @@ export function SearchInput({
   return (
     <View style={styles.searchWrap}>
       <Text style={styles.searchIcon}>⌕</Text>
-      <TextInput
+      <KeyboardAwareTextInput
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}

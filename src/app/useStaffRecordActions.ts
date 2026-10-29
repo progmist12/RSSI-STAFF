@@ -241,17 +241,25 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     }
   };
 
-  const openFarmer = async (farmer: Farmer) => {
+  const openFarmer = async (farmerOrId: Farmer | number) => {
     if (!session) return;
+    const farmerId =
+      typeof farmerOrId === 'number' ? farmerOrId : farmerOrId.id;
+    const cachedFarmer =
+      typeof farmerOrId === 'number'
+        ? farmers.find(farmer => farmer.id === farmerId)
+        : farmerOrId;
     setBusy(true);
     setSelectedReport(null);
     try {
       if (!online) {
-        setSelectedFarmer(farmer);
+        if (cachedFarmer) setSelectedFarmer(cachedFarmer);
+        else showNotice('Connect to load this farmer profile.', 'info');
         return;
       }
+      if (cachedFarmer) setSelectedFarmer(cachedFarmer);
       const response = await apiRequest<{ data: Farmer }>(
-        `/staff/farmers/${farmer.id}`,
+        `/staff/farmers/${farmerId}`,
         session.token,
       );
       setSelectedFarmer(response.data);
@@ -263,7 +271,8 @@ export function useStaffRecordActions(options: StaffRecordActionOptions) {
     } catch (error) {
       if (error instanceof ApiError && error.status === 0) {
         setOnline(false);
-        setSelectedFarmer(farmer);
+        if (cachedFarmer) setSelectedFarmer(cachedFarmer);
+        else showNotice('This farmer profile is not cached on this device.', 'info');
         return;
       }
       showNotice(

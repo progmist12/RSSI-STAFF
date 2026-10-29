@@ -23,6 +23,7 @@ export type FarmProperty = {
   size_hectares: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  boundary_coordinates?: Array<{ latitude: number; longitude: number }>;
   location_consent?: boolean;
 };
 
@@ -144,6 +145,7 @@ export type StaffVisit = {
 
 export type StaffMapReport = {
   id: number;
+  farmer_id?: number | null;
   property_id?: number | null;
   farmer_name?: string | null;
   code: string;
@@ -156,6 +158,8 @@ export type StaffMapReport = {
 };
 
 export type StaffMapLocation = {
+  farmer_id?: number | null;
+  boundary_coordinates?: Array<{ latitude: number; longitude: number }>;
   latitude: number;
   longitude: number;
   title: string;

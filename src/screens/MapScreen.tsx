@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { KeyboardAwareTextInput } from '../components/KeyboardAwareTextInput';
 import {
   Camera,
+  GeoJSONSource,
+  Layer,
   Map,
   Marker,
   type CameraRef,
@@ -78,6 +80,7 @@ function MapScreenView({
   locations,
   colors,
   onOpenReport,
+  onOpenFarmer,
   onViewFarmerHistory,
   online,
   onMapGestureChange,
@@ -85,6 +88,7 @@ function MapScreenView({
   locations: StaffMapLocation[];
   colors: Palette;
   onOpenReport: (reportId: number) => void;
+  onOpenFarmer: (farmerId: number) => void;
   onViewFarmerHistory: (
     report: StaffMapReport,
     location: StaffMapLocation,
@@ -92,6 +96,8 @@ function MapScreenView({
   online: boolean;
   onMapGestureChange: (active: boolean) => void;
 }) {
+  const { height: windowHeight } = useWindowDimensions();
+  const mapHeight = Math.round(Math.max(260, Math.min(420, windowHeight * 0.42)));
   const [query, setQuery] = useState('');
   const [provinceIndex, setProvinceIndex] = useState(0);
   const [statusIndex, setStatusIndex] = useState(0);
@@ -316,7 +322,7 @@ function MapScreenView({
         onTouchEnd={() => onMapGestureChange(false)}
         onTouchCancel={() => onMapGestureChange(false)}
         style={{
-          height: 292,
+          height: mapHeight,
           borderRadius: 14,
           overflow: 'hidden',
           backgroundColor: '#E8F1EF',
@@ -371,48 +377,112 @@ function MapScreenView({
             ).length;
             const color = noReport ? '#BBF7D0' : severityColor(markerSeverity);
             const isSelected = selectedKey === location.key;
+            const boundaryId = `farm-${location.key.replace(
+              /[^a-zA-Z0-9_-]/g,
+              '-',
+            )}`;
+            const boundaryRing: GeoJSON.Position[] = (
+              location.boundary_coordinates || []
+            )
+              .filter(
+                point =>
+                  Number.isFinite(Number(point.latitude)) &&
+                  Number.isFinite(Number(point.longitude)) &&
+                  Math.abs(Number(point.latitude)) <= 90 &&
+                  Math.abs(Number(point.longitude)) <= 180,
+              )
+              .map(point => [Number(point.longitude), Number(point.latitude)]);
+            if (boundaryRing.length >= 3) {
+              const firstPoint = boundaryRing[0];
+              const lastPoint = boundaryRing[boundaryRing.length - 1];
+              if (
+                firstPoint[0] !== lastPoint[0] ||
+                firstPoint[1] !== lastPoint[1]
+              ) {
+                boundaryRing.push(firstPoint);
+              }
+            }
             return (
-              <Marker
-                key={location.key}
-                id={location.key}
-                lngLat={[location.longitude, location.latitude]}
-                onPress={() => focusLocation(location)}
-                anchor="center"
-              >
-                <View
-                  style={{
-                    minWidth: isSelected ? 25 : 22,
-                    height: isSelected ? 25 : 22,
-                    paddingHorizontal: 4,
-                    borderRadius: 14,
-                    backgroundColor: color,
-                    borderWidth: isSelected ? 3 : 2,
-                    borderStyle: noReport ? 'dashed' : 'solid',
-                    borderColor: noReport
-                      ? isSelected
-                        ? '#166534'
-                        : '#15803D'
-                      : '#FFFFFF',
-                    elevation: 4,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: noReport
-                        ? '#166534'
-                        : markerSeverity === 'Moderate'
-                        ? '#1F2937'
-                        : '#FFFFFF',
-                      fontSize: 9,
-                      fontWeight: '900',
+              <React.Fragment key={location.key}>
+                {location.location_type === 'consented_farm' &&
+                boundaryRing.length >= 4 ? (
+                  <GeoJSONSource
+                    id={boundaryId}
+                    data={{
+                      type: 'Feature',
+                      properties: {},
+                      geometry: {
+                        type: 'Polygon',
+                        coordinates: [boundaryRing],
+                      },
                     }}
                   >
-                    {noReport ? '—' : pendingCount}
-                  </Text>
-                </View>
-              </Marker>
+                    <Layer
+                      id={`${boundaryId}-fill`}
+                      type="fill"
+                      source={boundaryId}
+                      paint={{
+                        'fill-color': color,
+                        'fill-opacity': isSelected
+                          ? 0.3
+                          : noReport
+                            ? 0.1
+                            : 0.22,
+                      }}
+                    />
+                    <Layer
+                      id={`${boundaryId}-outline`}
+                      type="line"
+                      source={boundaryId}
+                      paint={{
+                        'line-color': color,
+                        'line-width': isSelected ? 4 : 3,
+                        ...(noReport ? { 'line-dasharray': [2, 2] } : {}),
+                      }}
+                    />
+                  </GeoJSONSource>
+                ) : null}
+                <Marker
+                  id={location.key}
+                  lngLat={[location.longitude, location.latitude]}
+                  onPress={() => focusLocation(location)}
+                  anchor="center"
+                >
+                  <View
+                    style={{
+                      minWidth: isSelected ? 25 : 22,
+                      height: isSelected ? 25 : 22,
+                      paddingHorizontal: 4,
+                      borderRadius: 14,
+                      backgroundColor: color,
+                      borderWidth: isSelected ? 3 : 2,
+                      borderStyle: noReport ? 'dashed' : 'solid',
+                      borderColor: noReport
+                        ? isSelected
+                          ? '#166534'
+                          : '#15803D'
+                        : '#FFFFFF',
+                      elevation: 4,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: noReport
+                          ? '#166534'
+                          : markerSeverity === 'Moderate'
+                            ? '#1F2937'
+                            : '#FFFFFF',
+                        fontSize: 9,
+                        fontWeight: '900',
+                      }}
+                    >
+                      {noReport ? '—' : pendingCount}
+                    </Text>
+                  </View>
+                </Marker>
+              </React.Fragment>
             );
           })}
         </Map>
@@ -584,28 +654,76 @@ function MapScreenView({
               ? ' · approximate location'
               : ''}
           </Text>
-          {selectedLocationHistoryReport ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                onViewFarmerHistory(
-                  selectedLocationHistoryReport,
-                  selectedLocation,
-                )
-              }
-              style={{
-                paddingVertical: 10,
-                borderRadius: 9,
-                alignItems: 'center',
-                backgroundColor: colors.blueSoft,
-              }}
+          {selectedLocationHistoryReport || selectedLocation.farmer_id ? (
+            <View
+              style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}
             >
-              <Text
-                style={{ color: colors.blue, fontSize: 11, fontWeight: '800' }}
-              >
-                View farmer history
-              </Text>
-            </Pressable>
+              {selectedLocation.farmer_id ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${selectedLocation.title} farmer profile`}
+                  onPress={() => onOpenFarmer(selectedLocation.farmer_id!)}
+                  style={{
+                    flexGrow: 1,
+                    flexBasis: 150,
+                    minWidth: 140,
+                    minHeight: 44,
+                    paddingHorizontal: 10,
+                    paddingVertical: 10,
+                    borderRadius: 9,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.blue,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 11,
+                      fontWeight: '800',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Open farmer profile
+                  </Text>
+                </Pressable>
+              ) : null}
+              {selectedLocationHistoryReport ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="View farmer report history"
+                  onPress={() =>
+                    onViewFarmerHistory(
+                      selectedLocationHistoryReport,
+                      selectedLocation,
+                    )
+                  }
+                  style={{
+                    flexGrow: 1,
+                    flexBasis: 150,
+                    minWidth: 140,
+                    minHeight: 44,
+                    paddingHorizontal: 10,
+                    paddingVertical: 10,
+                    borderRadius: 9,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: colors.blueSoft,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: colors.blue,
+                      fontSize: 11,
+                      fontWeight: '800',
+                      textAlign: 'center',
+                    }}
+                  >
+                    View farmer history
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : null}
           {selectedLocationReviewReports.length ? (
             selectedLocationReviewReports.map(report => (
@@ -663,15 +781,28 @@ function MapScreenView({
                       } damage`
                     : ''}
                 </Text>
-                <View style={{ marginTop: 8 }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginTop: 8,
+                  }}
+                >
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => onOpenReport(report.id)}
                     style={{
+                      flexGrow: 1,
+                      flexBasis: 125,
+                      minWidth: 120,
+                      minHeight: 42,
                       backgroundColor: colors.blue,
+                      paddingHorizontal: 8,
                       paddingVertical: 9,
                       borderRadius: 8,
                       alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
                     <Text
@@ -684,6 +815,38 @@ function MapScreenView({
                       Open report
                     </Text>
                   </Pressable>
+                  {report.farmer_id ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open ${report.farmer_name || 'farmer'} profile`}
+                      onPress={() => onOpenFarmer(report.farmer_id!)}
+                      style={{
+                        flexGrow: 1,
+                        flexBasis: 125,
+                        minWidth: 120,
+                        minHeight: 42,
+                        paddingHorizontal: 8,
+                        paddingVertical: 9,
+                        borderRadius: 8,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: colors.blueSoft,
+                        borderWidth: 1,
+                        borderColor: colors.line,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: colors.blue,
+                          fontWeight: '800',
+                          fontSize: 11,
+                          textAlign: 'center',
+                        }}
+                      >
+                        Farmer profile
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             ))

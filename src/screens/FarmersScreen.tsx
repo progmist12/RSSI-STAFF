@@ -1,7 +1,8 @@
 import React from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { photoUrl } from '../api';
-import { Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
+import { FarmProperty, Farmer, FieldReport, ReviewForm, StaffSession } from '../types';
+import { FarmPropertyMap } from '../components/FarmPropertyMap';
 import {
   Choice,
   EmptyCard,
@@ -11,8 +12,17 @@ import {
   SectionTitle,
   Badge,
 } from '../components/ui';
+import type { Palette } from '../theme';
 import { formatDate, initials, roleName, severityStyle } from '../utils';
-export function FarmerDetail({ farmer, styles }: any) {
+export function FarmerDetail({
+  farmer,
+  styles,
+  colors,
+}: {
+  farmer: Farmer;
+  styles: any;
+  colors: Palette;
+}) {
   return (
     <View>
       <View style={styles.profileCard}>
@@ -49,7 +59,7 @@ export function FarmerDetail({ farmer, styles }: any) {
         detail="Location details reflect the farmer’s saved property records and consent settings."
         styles={styles}
       />
-      {farmer.properties?.map((property: any) => (
+      {farmer.properties?.map((property: FarmProperty) => (
         <View key={property.id} style={styles.propertyCard}>
           <View style={styles.propertyHeader}>
             <View style={styles.propertyPin}>
@@ -83,6 +93,7 @@ export function FarmerDetail({ farmer, styles }: any) {
               styles={styles}
             />
           ) : null}
+          <FarmPropertyMap property={property} colors={colors} />
           {property.location_consent ? (
             <Text style={styles.consentLine}>
               ✓ Location sharing consent recorded

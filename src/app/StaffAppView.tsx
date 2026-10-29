@@ -737,6 +737,7 @@ export function StaffAppView({ app }: { app: StaffAppController }) {
                 colors={colors}
                 online={online}
                 onOpenReport={openReportFromCurrentTab}
+                onOpenFarmer={openFarmer}
                 onViewFarmerHistory={openMapFarmHistory}
                 onMapGestureChange={setMapGestureActive}
               />

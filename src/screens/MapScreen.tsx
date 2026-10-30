@@ -164,10 +164,6 @@ function MapScreenView({
       );
   }, [locations, provinceIndex, query, statusIndex]);
 
-  const visibleReportCount = filteredLocations.reduce(
-    (total, location) => total + location.visibleReports.length,
-    0,
-  );
   const selectedLocation = filteredLocations.find(
     location => location.key === selectedKey,
   );
@@ -238,10 +234,6 @@ function MapScreenView({
         <Text style={{ color: colors.ink, fontSize: 24, fontWeight: '800' }}>
           Negros coverage
         </Text>
-        <Text style={{ color: colors.muted, fontSize: 12, marginTop: 5 }}>
-          Reports are grouped by farm or approximate municipality. Filter by
-          status to show all reports or only those awaiting verification.
-        </Text>
       </View>
 
       <KeyboardAwareTextInput
@@ -301,11 +293,7 @@ function MapScreenView({
         </View>
       </View>
 
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={{ color: colors.ink, fontSize: 12, fontWeight: '700' }}>
-          {visibleReportCount}{' '}
-          {statusIndex === 0 ? 'reports shown' : 'reports for verification'}
-        </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
         <Text style={{ color: colors.muted, fontSize: 11 }}>
           {filteredLocations.length} map locations
         </Text>

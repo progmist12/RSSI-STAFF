@@ -497,19 +497,9 @@ export function useStaffAppController() {
       refreshInFlightRef.current = true;
       if (showSpinner) setRefreshing(true);
       try {
-        const failedRequests: string[] = [];
-        const describeFailure = (label: string, reason: unknown) => {
-          if (reason instanceof ApiError) {
-            if (reason.status >= 500) {
-              return `${label}: ${reason.message}`;
-            }
-            return reason.status
-              ? `${label} (HTTP ${reason.status}): ${reason.message}`
-              : `${label}: ${reason.message}`;
-          }
-          return `${label}: ${
-            reason instanceof Error ? reason.message : 'request failed'
-          }`;
+        const failedRequests: unknown[] = [];
+        const recordFailure = (reason: unknown) => {
+          failedRequests.push(reason);
         };
         const token = session.token;
         await flushPendingReviews();
@@ -602,12 +592,7 @@ export function useStaffAppController() {
             setSelectedReport(refreshedReport);
           }
         } else {
-          failedRequests.push(
-            describeFailure(
-              'GET /staff/reports?page=1&pageSize=20',
-              reportResult.reason,
-            ),
-          );
+          recordFailure(reportResult.reason);
           unauthorized ||=
             reportResult.reason instanceof ApiError &&
             reportResult.reason.status === 401;
@@ -616,12 +601,7 @@ export function useStaffAppController() {
         if (pendingResult.status === 'fulfilled')
           setPendingTotal(pendingResult.value.meta?.total ?? 0);
         else {
-          failedRequests.push(
-            describeFailure(
-              'GET /staff/reports?status=For%20verification&page=1&pageSize=1',
-              pendingResult.reason,
-            ),
-          );
+          recordFailure(pendingResult.reason);
           unauthorized ||=
             pendingResult.reason instanceof ApiError &&
             pendingResult.reason.status === 401;
@@ -640,12 +620,7 @@ export function useStaffAppController() {
             if (refreshed) setSelectedFarmer(refreshed);
           }
         } else {
-          failedRequests.push(
-            describeFailure(
-              'GET /staff/farmers?page=1&pageSize=20',
-              farmerResult.reason,
-            ),
-          );
+          recordFailure(farmerResult.reason);
           unauthorized ||=
             farmerResult.reason instanceof ApiError &&
             farmerResult.reason.status === 401;
@@ -661,9 +636,7 @@ export function useStaffAppController() {
               ),
           );
         } else {
-          failedRequests.push(
-            describeFailure('GET /staff/map-locations', mapResult.reason),
-          );
+          recordFailure(mapResult.reason);
           unauthorized ||=
             mapResult.reason instanceof ApiError &&
             mapResult.reason.status === 401;
@@ -680,21 +653,24 @@ export function useStaffAppController() {
           );
           setVisitPage(visitResult.value.meta?.page ?? 1);
         } else {
-          failedRequests.push(
-            describeFailure(
-              'GET /staff/visits?page=1&pageSize=20',
-              visitResult.reason,
-            ),
-          );
+          recordFailure(visitResult.reason);
           unauthorized ||=
             visitResult.reason instanceof ApiError &&
             visitResult.reason.status === 401;
         }
         if (unauthorized) {
-          showNotice('Your session expired. Please sign in again.', 'error');
+          showNotice('Session expired. Sign in again.', 'error');
           await signOut(false);
         } else if (failedRequests.length && online) {
-          showNotice(`Refresh failed: ${failedRequests.join(' · ')}`, 'error');
+          const connectionFailed = failedRequests.some(
+            reason => reason instanceof ApiError && reason.status === 0,
+          );
+          showNotice(
+            connectionFailed
+              ? "Can't connect. Check your internet and try again."
+              : "Couldn't refresh data. Try again later.",
+            'error',
+          );
         } else if (!failedRequests.length) {
           setNotice('');
         }

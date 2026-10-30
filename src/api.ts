@@ -18,42 +18,56 @@ export class ApiError extends Error {
 }
 
 const messages: Record<string, string> = {
-  invalid_credentials: 'Email or password is incorrect.',
-  account_unavailable: 'This staff account is inactive. Contact your workspace administrator.',
-  unauthorized: 'Your session expired. Sign in again to continue.',
-  forbidden: 'Your staff account does not have permission for this action.',
-  report_not_found: 'This report is no longer available.',
-  server_unavailable: 'The RSSI service could not be reached. Check your connection and try again.',
-  server_error: 'The server had a problem loading this information. Please try again shortly.',
-  invalid_follow_up_date: 'Enter the follow-up date as YYYY-MM-DD.',
-  invalid_visit_date: 'Enter the visit date using YYYY-MM-DD.',
-  invalid_visit_checkings: 'One or more visit checks have invalid details.',
-  active_visit_exists: 'Complete or cancel the current scheduled visit first.',
-  visit_not_found: 'This field visit is no longer available.',
-  visit_is_locked: 'Completed and cancelled visits are preserved as history.',
-  visit_conflict: 'This visit changed on the server. Choose which version to keep.',
-  report_review_completed: 'This report was completed elsewhere. Its visit can no longer be changed.',
-  invalid_visit_version: 'Refresh the visit before saving your changes.',
-  invalid_profile_photo: 'Choose a JPEG, PNG, or WebP photo no larger than 5 MB.',
+  invalid_credentials: 'Username or password is incorrect.',
+  account_unavailable: 'Account inactive. Contact your administrator.',
+  unauthorized: 'Session expired. Sign in again.',
+  forbidden: "You don't have access to this.",
+  report_not_found: 'Report no longer available.',
+  farmer_not_found: 'Farmer no longer available.',
+  photo_not_found: 'Photo no longer available.',
+  server_unavailable: "Can't connect. Check your internet and try again.",
+  server_error: "Couldn't load this. Try again later.",
+  invalid_follow_up_date: 'Enter a valid follow-up date.',
+  invalid_visit_date: 'Enter a valid visit date.',
+  invalid_visit_checkings: 'Check the visit details and try again.',
+  invalid_review_transition: 'Check the review details and try again.',
+  active_visit_exists: 'Finish or cancel the scheduled visit first.',
+  visit_not_found: 'Visit no longer available.',
+  visit_is_locked: 'This visit is already closed.',
+  visit_conflict: 'Visit changed. Refresh and try again.',
+  report_review_completed: 'This report is already complete.',
+  invalid_visit_version: 'Refresh the visit and try again.',
+  invalid_profile_photo: 'Choose an image under 5 MB.',
+  unsupported_media_type: 'Choose a supported image file.',
 };
 
-async function decode<T>(response: Response): Promise<T> {
+const statusMessages: Record<number, string> = {
+  400: 'Check the details and try again.',
+  401: 'Session expired. Sign in again.',
+  403: "You don't have access to this.",
+  404: 'This item is no longer available.',
+  409: 'This item changed. Refresh and try again.',
+  413: 'File is too large.',
+  415: 'Choose a supported file type.',
+  422: 'Check the details and try again.',
+  429: 'Too many attempts. Try again later.',
+};
+
+async function decode<T>(response: Response, path = ''): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    // Avoid showing raw framework/database errors (or the unhelpful "http 500")
-    // to staff. A 5xx response means the server received the request but failed
-    // while processing it; it is distinct from a network connection failure.
     const serverError = response.status >= 500;
     const code = serverError
       ? 'server_error'
       : typeof body.error === 'string'
         ? body.error
         : `http_${response.status}`;
+    const loginFailure = path === '/auth/login'
+      ? "Can't sign in right now. Try again later."
+      : undefined;
     const message = serverError
-      ? messages.server_error
-      : typeof body.message === 'string'
-        ? body.message
-        : messages[code] || code.replaceAll('_', ' ');
+      ? loginFailure || messages.server_error
+      : messages[code] || loginFailure || statusMessages[response.status] || 'Could not complete this. Try again.';
     throw new ApiError(response.status, code, message, body);
   }
   return body as T;
@@ -69,10 +83,13 @@ export async function apiRequest<T>(path: string, token?: string, options: Reque
   if (typeof options.body === 'string') headers['Content-Type'] = 'application/json';
   try {
     const response = await fetch(`${API_ROOT}${path}`, {...options, headers});
-    return await decode<T>(response);
+    return await decode<T>(response, path);
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError(0, 'server_unavailable', messages.server_unavailable);
+    const message = path === '/auth/login'
+      ? "Can't sign in right now. Check your internet and try again."
+      : messages.server_unavailable;
+    throw new ApiError(0, 'server_unavailable', message);
   }
 }
 
@@ -107,7 +124,7 @@ export async function uploadStaffProfilePhoto(token: string, photo: Asset): Prom
   };
   try {
     const response = await fetch(`${API_ROOT}/me/profile-photo`, {method: 'POST', headers, body: form});
-    return await decode<{profile_photo_url: string | null}>(response);
+    return await decode<{profile_photo_url: string | null}>(response, '/me/profile-photo');
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(0, 'server_unavailable', messages.server_unavailable);

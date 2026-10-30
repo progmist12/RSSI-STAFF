@@ -815,38 +815,6 @@ function MapScreenView({
                       Open report
                     </Text>
                   </Pressable>
-                  {report.farmer_id ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${report.farmer_name || 'farmer'} profile`}
-                      onPress={() => onOpenFarmer(report.farmer_id!)}
-                      style={{
-                        flexGrow: 1,
-                        flexBasis: 125,
-                        minWidth: 120,
-                        minHeight: 42,
-                        paddingHorizontal: 8,
-                        paddingVertical: 9,
-                        borderRadius: 8,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: colors.blueSoft,
-                        borderWidth: 1,
-                        borderColor: colors.line,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: colors.blue,
-                          fontWeight: '800',
-                          fontSize: 11,
-                          textAlign: 'center',
-                        }}
-                      >
-                        Farmer profile
-                      </Text>
-                    </Pressable>
-                  ) : null}
                 </View>
               </View>
             ))
